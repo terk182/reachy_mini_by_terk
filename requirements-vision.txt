@@ -1,0 +1,3 @@
+# ตัวเลือก: hand tracking แบบ MediaPipe (แม่นยำกว่า skin detection fallback)
+# หมายเหตุ: ถ้าลงบน Raspberry Pi 5 (ARM64) ไม่ได้ ให้ใช้ fallback ของ src/vision.py แทน
+mediapipe>=0.10

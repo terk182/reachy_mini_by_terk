@@ -1,0 +1,16 @@
+# Reachy Mini DIY — dependencies หลัก
+numpy>=1.26
+pyserial>=3.5
+opencv-python>=4.8
+mujoco>=3.0
+
+# LLM chat (เสียงพูด + เล่นไฟล์เสียง) — Ollama ติดตั้งแยก (ดู README)
+edge-tts>=6.1
+gtts>=2.5
+playsound3>=3.3
+pyttsx3>=2.90
+miniaudio>=1.71   # decode MP3 → PCM สำหรับขยับหัวตามจังหวะเสียง (speech_sway)
+
+# STT (Speech-to-Text) ภาษาไทย
+faster-whisper>=1.1
+sounddevice>=0.4

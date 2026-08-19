@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+reachy_mini_env/
+
+# สิ่งที่ดาวน์โหลดอัตโนมัติ
+hand_landmarker.task
+
+# ค่าเฉพาะเครื่อง (URL GPU server ฯลฯ — แก้ได้ แต่ไม่ commit)
+config/local_config.json
+
+# โมเดลที่ดาวน์โหลดอัตโนมัติ (MediaPipe / OpenCV)
+*.task
+*.onnx
+
+# แคช / ไฟล์ชั่วคราว
+cache/
+
+# third_party = โคลน official SDK (ติดตั้งตาม patch/README.md)
+third_party/
+
+# ค่า calibration เฉพาะเครื่อง (แต่ละตัว calibrate เอง)
+config/calibration.json
+
+# plan ชั่วคราว
+plan.md
+
+# Runtime / metadata ที่ไม่ใช่โค้ดโปรเจกต์
+.app_metadata/
+config/watchdog.lock
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

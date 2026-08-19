@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Reachy Mini DIY — เอกสารมิติชุด STS3215 (สำหรับวาด SolidWorks)</title>
+<style>
+  :root {
+    --bg: #0f172a; --card: #1e293b; --line: #334155;
+    --txt: #e2e8f0; --dim: #94a3b8; --acc: #38bdf8;
+    --ok: #4ade80; --warn: #fbbf24; --red: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--txt);
+    font-family: "Segoe UI", "Noto Sans Thai", system-ui, sans-serif;
+    line-height: 1.55;
+  }
+  header { padding: 28px 40px; background: linear-gradient(135deg,#0c4a6e,#1e3a8a); }
+  header h1 { margin: 0 0 6px; font-size: 26px; }
+  header p { margin: 0; color: #bae6fd; }
+  nav { position: sticky; top: 0; background: #0b1120cc; backdrop-filter: blur(6px);
+        padding: 10px 40px; display: flex; flex-wrap: wrap; gap: 8px 18px; z-index: 10;
+        border-bottom: 1px solid var(--line); }
+  nav a { color: var(--acc); text-decoration: none; font-size: 14px; }
+  nav a:hover { text-decoration: underline; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 40px 80px; }
+  section { margin-top: 40px; }
+  h2 { font-size: 21px; border-left: 4px solid var(--acc); padding-left: 12px; }
+  h3 { font-size: 16px; color: var(--acc); margin: 28px 0 10px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+          padding: 16px 20px; margin: 14px 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; margin: 8px 0; }
+  th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+  th { background: #0f172a; color: var(--acc); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .mono { font-family: Consolas, monospace; font-size: 13px; color: #fbbf24; }
+  .note { color: var(--dim); font-size: 13px; }
+  .warn { color: var(--warn); }
+  .red { color: var(--red); }
+  .ok { color: var(--ok); }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px;
+           background: #0c4a6e; color: #bae6fd; margin-left: 8px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 820px) { .grid2 { grid-template-columns: 1fr; } }
+  svg { background: #0b1120; border: 1px solid var(--line); border-radius: 10px; width: 100%; height: auto; }
+  .cap { text-align: center; color: var(--dim); font-size: 13px; margin-top: 6px; }
+  code { background: #0f172a; padding: 1px 6px; border-radius: 5px; font-family: Consolas, monospace; }
+  ul { margin: 6px 0; padding-left: 22px; }
+  li { margin: 3px 0; }
+  footer { border-top: 1px solid var(--line); margin-top: 60px; padding: 20px 40px;
+           color: var(--dim); font-size: 13px; }
+  .svg-wrap { overflow-x: auto; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📐 Reachy Mini DIY — เอกสารมิติสำหรับวาด SolidWorks</h1>
+  <p>ชุดประกอบ <b>STS3215</b> (จานล่าง R70 / จานบน R45 / กลไก crank-rod 40+85 mm) — ข้อมูลจาก <code>config/robot_config.py</code> + ค่า calibrate</p>
+</header>
+
+<nav>
+  <a href="#overview">1. ภาพรวม</a>
+  <a href="#datum">2. ระบบพิกัด</a>
+  <a href="#topview">3. แผนภาพบน (Top)</a>
+  <a href="#sideview">4. แผนภาพกลไกขา</a>
+  <a href="#parts">5. มิติแต่ละชิ้น</a>
+  <a href="#motor">6. มอเตอร์ STS3215</a>
+  <a href="#motion">7. ช่วงการเคลื่อนที่</a>
+  <a href="#assemble">8. ประกอบ</a>
+</nav>
+
+<main>
+
+<!-- ============ 1. ภาพรวม ============ -->
+<section id="overview">
+  <h2>1. ภาพรวมเรขาคณิต</h2>
+  <div class="card">
+    <p>หัวเป็น <b>Stewart platform 6-DOF</b>: จานล่าง (ติดมอเตอร์ 6 ตัว) + จานบน (ติดหัว/กล้อง)
+    เชื่อมกันด้วย <b>แขนหมุน + ก้านต่อ</b> (กลไก 2-bar แบบเดียวกับ Reachy ทางการ)</p>
+    <table>
+      <tr><th>พารามิเตอร์</th><th>ค่า</th><th>ความหมาย</th></tr>
+      <tr><td><code>base_radius</code></td><td class="num"><b>70 mm</b></td><td>รัศมีจุดต่อขาบนจานล่าง (อยู่มุม 6 เหลี่ยม)</td></tr>
+      <tr><td><code>top_radius</code></td><td class="num"><b>45 mm</b></td><td>รัศมีจุดต่อขาบนจานบน</td></tr>
+      <tr><td><code>top_offset_deg</code></td><td class="num"><b>30°</b></td><td>มุม offset จุดต่อจานบน เทียบจานล่าง</td></tr>
+      <tr><td><code>z_home</code></td><td class="num"><b>70 mm</b></td><td>ความสูงจานบน (จากจานล่าง) ที่ท่า home</td></tr>
+      <tr><td><code>leg_home</code></td><td class="num"><b>79.81 mm</b></td><td>ความยาวขา (จานล่าง→จานบน) ที่ท่า home — ค่า calibrate</td></tr>
+      <tr><td><code>base_plate_z</code></td><td class="num"><b>80 mm</b></td><td>ความสูงจานล่างจากพื้น (ใช้ใน GUI)</td></tr>
+      <tr><td><code>mechanism</code></td><td><code>crank_rod</code></td><td>กลไกขา = แขนหมุน + ก้านต่อ</td></tr>
+      <tr><td><code>arm_len</code></td><td class="num"><b>40 mm</b></td><td>ความยาวแขนหมุน (ยึดเพลา servo)</td></tr>
+      <tr><td><code>rod_len</code></td><td class="num"><b>85 mm</b></td><td>ความยาวก้านต่อ (วัดระยะศูนย์ลูกบอล)</td></tr>
+      <tr><td><code>solution</code></td><td><code>[0,1,0,1,0,1]</code></td><td>ทิศศอกต่อขา (ขา 1,3,5 กลับด้าน)</td></tr>
+      <tr><td><code>pos_center</code></td><td class="num">2048</td><td>ตำแหน่ง servo กึ่งกลางรอบ (0–4095)</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ============ 2. ระบบพิกัด ============ -->
+<section id="datum">
+  <h2>2. ระบบพิกัด (Datum สำหรับ SolidWorks)</h2>
+  <div class="card">
+    <ul>
+      <li><b>Origin (0,0,0)</b> = จุดศูนย์กลางจานล่าง Stewart บนผิวบนจานล่าง</li>
+      <li><b>+Z</b> = ขึ้น (ทิศหัว)</li>
+      <li><b>+X</b> = ชี้ไปที่จุดต่อขา <b>leg0</b> (มอเตอร์ตัวที่มุม 0°)</li>
+      <li><b>+Y</b> = หน้า (ทิศกล้อง/เสาอากาศ)</li>
+      <li>จานล่าง 6 เหลี่ยม หันมุมที่ 0°, 60°, 120°, … (มุมเดียวกับจุดต่อขา)</li>
+      <li>มอเตอร์ทั้ง 6 ตัววางที่ <b>รัศมี 55 mm</b> ห่างกัน 60°</li>
+    </ul>
+    <p class="note">💡 ถ้าวาดด้วยระบบอื่น ให้ขยับ assembly ตาม — ค่ามิติชิ้นส่วนไม่เปลี่ยน</p>
+  </div>
+</section>
+
+<!-- ============ 3. แผนภาพบน ============ -->
+<section id="topview">
+  <h2>3. แผนภาพบน (Top view) — ตำแหน่งจุดต่อ + มอเตอร์</h2>
+  <div class="card svg-wrap">
+    <svg viewBox="0 0 720 720" width="720" height="720" role="img" aria-label="แผนภาพบน">
+      <!-- เส้นพิกัด -->
+      <line x1="350" y1="20" x2="350" y2="700" stroke="#1e293b" stroke-width="1" stroke-dasharray="4 4"/>
+      <line x1="20" y1="350" x2="700" y2="350" stroke="#1e293b" stroke-width="1" stroke-dasharray="4 4"/>
+      <text x="356" y="34" fill="#64748b" font-size="12">+X</text>
+      <text x="34" y="344" fill="#64748b" font-size="12">+Y</text>
+
+      <!-- จานล่าง 6 เหลี่ยม R70 (มุม 0,60,..) -->
+      <polygon points="630,350 490,592 210,592 70,350 210,108 490,108"
+               fill="#1e293b" stroke="#38bdf8" stroke-width="2"/>
+      <!-- จานบน 6 เหลี่ยม R45 (มุม 0,60,..) -->
+      <polygon points="530,350 440,506 260,506 170,350 260,194 440,194"
+               fill="none" stroke="#4ade80" stroke-width="2" stroke-dasharray="6 4"/>
+
+      <!-- จุดต่อจานล่าง (base pts) -->
+      <g fill="#38bdf8">
+        <circle cx="630" cy="350" r="7"/><circle cx="490" cy="592" r="7"/>
+        <circle cx="210" cy="592" r="7"/><circle cx="70" cy="350" r="7"/>
+        <circle cx="210" cy="108" r="7"/><circle cx="490" cy="108" r="7"/>
+      </g>
+      <!-- จุดต่อจานบน (top pts, offset 30°) -->
+      <g fill="#4ade80">
+        <circle cx="506" cy="440" r="7"/><circle cx="350" cy="530" r="7"/>
+        <circle cx="194" cy="440" r="7"/><circle cx="194" cy="260" r="7"/>
+        <circle cx="350" cy="170" r="7"/><circle cx="506" cy="260" r="7"/>
+      </g>
+      <!-- ตำแหน่งมอเตอร์ R55 -->
+      <g fill="none" stroke="#fbbf24" stroke-width="2">
+        <circle cx="570" cy="350" r="16"/><circle cx="460" cy="540" r="16"/>
+        <circle cx="240" cy="540" r="16"/><circle cx="130" cy="350" r="16"/>
+        <circle cx="240" cy="160" r="16"/><circle cx="460" cy="160" r="16"/>
+      </g>
+
+      <!-- เส้นรัศมี -->
+      <line x1="350" y1="350" x2="630" y2="350" stroke="#94a3b8" stroke-width="1"/>
+      <line x1="350" y1="350" x2="570" y2="350" stroke="#fbbf24" stroke-width="1"/>
+      <line x1="350" y1="350" x2="506" y2="440" stroke="#94a3b8" stroke-width="1"/>
+
+      <!-- คำอธิบาย -->
+      <text x="636" y="344" fill="#38bdf8" font-size="13" font-weight="bold">จุดต่อจานล่าง (R70)</text>
+      <text x="512" y="434" fill="#4ade80" font-size="13" font-weight="bold">จุดต่อจานบน (R45, offset 30°)</text>
+      <text x="576" y="342" fill="#fbbf24" font-size="13" font-weight="bold">มอเตอร์ STS3215 (R55)</text>
+      <text x="440" y="380" fill="#94a3b8" font-size="12">R70</text>
+      <text x="528" y="380" fill="#fbbf24" font-size="12">R55</text>
+      <text x="470" y="416" fill="#4ade80" font-size="12">R45</text>
+      <text x="350" y="96" fill="#94a3b8" font-size="12">60°</text>
+      <text x="620" y="96" fill="#94a3b8" font-size="12">leg0 @ 0° (+X)</text>
+    </svg>
+    <div class="cap">Top view — ขนาดจริง: จุดต่อจานล่าง R70, จุดต่อจานบน R45 (หมุน 30°), มอเตอร์ที่ R55 (สเกล 4 px/mm)</div>
+  </div>
+
+  <div class="card">
+    <h3>พิกัดจุดต่อ (หน่วย mm, home)</h3>
+    <table>
+      <tr><th>ขา</th><th>จุดต่อจานล่าง (z=0)</th><th>จุดต่อจานบน (z=70)</th></tr>
+      <tr><td>leg0</td><td class="mono">(70.00, 0.00)</td><td class="mono">(38.97, 22.50)</td></tr>
+      <tr><td>leg1</td><td class="mono">(35.00, 60.62)</td><td class="mono">(0.00, 45.00)</td></tr>
+      <tr><td>leg2</td><td class="mono">(-35.00, 60.62)</td><td class="mono">(-38.97, 22.50)</td></tr>
+      <tr><td>leg3</td><td class="mono">(-70.00, 0.00)</td><td class="mono">(-38.97, -22.50)</td></tr>
+      <tr><td>leg4</td><td class="mono">(-35.00, -60.62)</td><td class="mono">(0.00, -45.00)</td></tr>
+      <tr><td>leg5</td><td class="mono">(35.00, -60.62)</td><td class="mono">(38.97, -22.50)</td></tr>
+    </table>
+    <p class="note">ตำแหน่งมอเตอร์ (แกนหมุนแขน): (55,0), (27.5,47.63), (-27.5,47.63), (-55,0), (-27.5,-47.63), (27.5,-47.63) ที่ z = ผิวบนจานล่าง</p>
+  </div>
+</section>
+
+<!-- ============ 4. แผนภาพกลไกขา ============ -->
+<section id="sideview">
+  <h2>4. แผนภาพกลไกขา (Side view — ระนาบของขา)</h2>
+  <div class="card svg-wrap">
+    <svg viewBox="0 0 420 460" width="420" height="460" role="img" aria-label="แผนภาพกลไกขา">
+      <!-- จานล่าง/บน (เส้นอ้างอิง) -->
+      <line x1="20" y1="400" x2="400" y2="400" stroke="#1e293b" stroke-width="3"/>
+      <line x1="20" y1="100" x2="400" y2="100" stroke="#1e293b" stroke-width="3"/>
+      <text x="22" y="414" fill="#94a3b8" font-size="12">จานล่าง</text>
+      <text x="22" y="92" fill="#94a3b8" font-size="12">จานบน</text>
+
+      <!-- แกนขา home -->
+      <line x1="60" y1="400" x2="260" y2="100" stroke="#38bdf8" stroke-width="2" stroke-dasharray="6 5"/>
+      <!-- แขนหมุน 40mm -->
+      <line x1="60" y1="400" x2="72" y2="300" stroke="#f87171" stroke-width="4"/>
+      <!-- ก้านต่อ 85mm -->
+      <line x1="72" y1="300" x2="260" y2="100" stroke="#4ade80" stroke-width="4"/>
+
+      <!-- จุด -->
+      <circle cx="60" cy="400" r="7" fill="#38bdf8"/>
+      <circle cx="72" cy="300" r="6" fill="#f87171"/>
+      <circle cx="260" cy="100" r="7" fill="#4ade80"/>
+
+      <!-- มุม θ -->
+      <path d="M 92 400 A 32 32 0 0 0 69 372" fill="none" stroke="#fbbf24" stroke-width="2"/>
+      <text x="104" y="388" fill="#fbbf24" font-size="13">θ=83.3°</text>
+
+      <!-- labels -->
+      <text x="36" y="340" fill="#f87171" font-size="13" font-weight="bold">แขน 40</text>
+      <text x="150" y="236" fill="#4ade80" font-size="13" font-weight="bold">ก้าน 85</text>
+      <text x="100" y="262" fill="#38bdf8" font-size="12">ขา home = 79.8</text>
+      <text x="66" y="432" fill="#94a3b8" font-size="12">B (จุดต่อจานล่าง)</text>
+      <text x="266" y="94" fill="#94a3b8" font-size="12">T (จุดต่อจานบน)</text>
+    </svg>
+    <div class="cap">ระนาบของขา (mechanism plane) — ท่า home: แขน 40 mm เอียง θ=83.3° จากแกนขา, ก้าน 85 mm ต่อถึงจานบน (สเกล 2.5 px/mm)</div>
+  </div>
+
+  <div class="card">
+    <h3>กฎ 2-bar (คราวสำคัญ)</h3>
+    <ul>
+      <li>ความยาวขาที่กลไกใช้ได้จริง: <b>45 mm ≤ L ≤ 125 mm</b>
+        (L<sub>min</sub> = rod−arm = 45, L<sub>max</sub> = rod+arm = 125)</li>
+      <li>กฎโคไซน์: <code>rod² = arm² + L² − 2·arm·L·cos(θ)</code></li>
+      <li>มุมแขนที่ home θ ≈ <b>83.3°</b> (servo pos ≈ 2996 จากกึ่งกลาง 2048)</li>
+      <li>มี 2 คำตอบ (ศอกบน/ล่าง) → เลือกตาม <code>solution</code> ต่อขา
+        (<code>[0,1,0,1,0,1]</code> = ขา 1,3,5 กลับด้าน) — <b>เวลาประกอบต้องตามลำดับนี้</b></li>
+      <li class="warn">⚠️ ก้าน 85 mm วัดระยะ<b>ศูนย์กลางลูกบอลถึงศูนย์กลางลูกบอล</b></li>
+    </ul>
+  </div>
+</section>
+
+<!-- ============ 5. มิติแต่ละชิ้น ============ -->
+<section id="parts">
+  <h2>5. มิติแต่ละชิ้น (อ้างอิงจาก <code>models/stl/</code> + กลไก)</h2>
+
+  <h3>5.1 จานล่าง (lower_plate) <span class="badge">print</span></h3>
+  <div class="card">
+    <table>
+      <tr><th>รายการ</th><th>ค่า</th><th>หมายเหตุ</th></tr>
+      <tr><td>รูปทรง</td><td>หกเหลี่ยมด้านเท่า (hex)</td><td>มุมที่ 0°,60°,…</td></tr>
+      <tr><td>รัศมีรอบนอก (circumradius)</td><td class="num">70 mm</td><td>ระยะมุม→ศูนย์กลาง</td></tr>
+      <tr><td>ความหนา</td><td class="num">10 mm</td><td>STL ตัวอย่าง (หนาพอรองรับน้ำหนักหัว ~400 g)</td></tr>
+      <tr><td>ตำแหน่งมอเตอร์</td><td>รัศมี 55 mm, 6 จุด ห่าง 60°</td><td>แกนเพลา servo อยู่ที่รัศมีนี้</td></tr>
+      <tr><td>ช่อง/ที่ยึดมอเตอร์</td><td>กว้าง ≈ 42 mm</td><td>ตัวมอเตอร์ 40 mm + เผื่อ</td></tr>
+      <tr><td>หมุดนำมอเตอร์ (STL)</td><td>Ø10 (r5), สูง 5 mm</td><td>กันมอเตอร์หมุน (ตำแหน่งเดียวกัน 6 จุด)</td></tr>
+      <tr><td>รูยึดมอเตอร์</td><td class="warn">วัดจากตัวจริง</td><td>STS3215 มีรูเกลียว — วัดระยะ/ขนาดก่อนเจาะ</td></tr>
+    </table>
+    <p class="note">ชิ้นส่วน STL: <code>lower_plate.stl</code> — ปริซึม 6 เหลี่ยม R70 หนา 10 + หมุด Ø10 จำนวน 6 จุด</p>
+  </div>
+
+  <h3>5.2 จานบน (top_plate) <span class="badge">print</span></h3>
+  <div class="card">
+    <table>
+      <tr><th>รายการ</th><th>ค่า</th><th>หมายเหตุ</th></tr>
+      <tr><td>รูปทรง</td><td>หกเหลี่ยมด้านเท่า (hex)</td><td>มุมที่ 0°,60°,… (จุดต่อขาอยู่กึ่งกลางด้าน)</td></tr>
+      <tr><td>รัศมีรอบนอก</td><td class="num">45 mm</td><td>ระยะมุม→ศูนย์กลาง</td></tr>
+      <tr><td>ความหนา</td><td class="num">8 mm</td><td>STL ตัวอย่าง</td></tr>
+      <tr><td>จุดต่อขา (ลูกบอลบน)</td><td>รัศมี 45 mm, offset 30° จากจานล่าง</td><td>พิกัดตามตารางข้อ 3</td></tr>
+      <tr><td>จุดยึดหัว/กล้อง</td><td>กึ่งกลางจาน</td><td>รู M3 × 3-4 จุด (ออกแบบเอง)</td></tr>
+    </table>
+    <p class="note">ชิ้นส่วน STL: <code>top_plate.stl</code> — ปริซึม 6 เหลี่ยม R45 หนา 8</p>
+  </div>
+
+  <h3>5.3 แขนหมุน (crank_arm) <span class="badge">print / ซื้อ horn โลหะ</span></h3>
+  <div class="card">
+    <table>
+      <tr><th>รายการ</th><th>ค่า</th><th>หมายเหตุ</th></tr>
+      <tr><td>ความยาวแขน (ศูนย์เพลา → ศูนย์ลูกบอล)</td><td class="num"><b>40 mm</b></td><td><code>arm_len</code></td></tr>
+      <tr><td>ความกว้าง/หนา (STL)</td><td class="num">8 × 5 mm</td><td>ปรับตามวัสดุ print</td></tr>
+      <tr><td>ดุมเพลา (STL)</td><td class="num">Ø14 × 9 mm</td><td>เจาะ/ขึ้นรูปให้เข้ากับ spline ของ STS3215</td></tr>
+      <tr><td>รูยึดก้านต่อ</td><td>Ø3-4 (สกรู M3)</td><td>ที่ปลายแขน ระยะ 40 mm จากศูนย์เพลา</td></tr>
+    </table>
+    <p class="note">✅ แนะนำ: ใช้ <b>servo horn โลหะ</b> ของ STS3215 มาเจาะรูที่ระยะ 40 mm ก็ได้ (ประหยัดกว่า print)</p>
+  </div>
+
+  <h3>5.4 ก้านต่อ (rod) <span class="badge">print / ซื้อ</span></h3>
+  <div class="card">
+    <table>
+      <tr><th>รายการ</th><th>ค่า</th><th>หมายเหตุ</th></tr>
+      <tr><td>ความยาว (ศูนย์กลางหัวบอล 2 ข้าง)</td><td class="num"><b>85 mm</b></td><td><code>rod_len</code> — สำคัญ!</td></tr>
+      <tr><td>เส้นผ่านศูนย์กลางก้าน</td><td class="num">Ø6 mm</td><td>STL ตัวอย่าง</td></tr>
+      <tr><td>หัวบอล</td><td class="num">Ø10 mm</td><td>2 ข้าง (ปลายบน/ล่าง)</td></tr>
+      <tr><td>ทางเลือก</td><td>—</td><td>ใช้ ball joint M3 หรือตลับลูกปืน + สกรู</td></tr>
+    </table>
+    <p class="note">⚠️ ความยาวผิด = มุม/ระยะ home ผิดทั้งระบบ — ควรวัดระยะศูนย์กลางจริงหลังประกอบ</p>
+  </div>
+
+  <h3>5.5 ฐาน (base) <span class="badge">print</span></h3>
+  <div class="card">
+    <table>
+      <tr><th>รายการ</th><th>ค่า</th><th>หมายเหตุ</th></tr>
+      <tr><td>รูปทรง</td><td>กรวยตัด (frustum)</td><td>ขยายฐานรองรับน้ำหนักหัว</td></tr>
+      <tr><td>Ø ฐานล่าง / บน</td><td class="num">Ø110 / Ø76 mm</td><td>STL ตัวอย่าง (R55→R38)</td></tr>
+      <tr><td>ความสูง</td><td class="num">50 mm</td><td>STL ตัวอย่าง</td></tr>
+      <tr><td>จุดยึดจานล่าง</td><td>ผิวบน</td><td>รู M3 × 3-6 จุด (ออกแบบเอง)</td></tr>
+    </table>
+  </div>
+
+  <h3>5.6 หัว (head) + กล้อง + เสาอากาศ <span class="badge">print</span></h3>
+  <div class="card">
+    <table>
+      <tr><th>รายการ</th><th>ค่า</th><th>หมายเหตุ</th></tr>
+      <tr><td>ตัวหัว (STL)</td><td class="num">Ø50 mm (R25)</td><td>ทรงกลมตัวอย่าง — ออกแบบเองได้</td></tr>
+      <tr><td>ช่องกล้อง USB</td><td>หน้า (+Y)</td><td>กว้างตามกล้องจริง (เช่น ~35×20 mm)</td></tr>
+      <tr><td>เสาอากาศ</td><td>Ø9 × ยาว 45 mm</td><td>2 ข้าง หัน +Y, แกนหมุนตามแนวนอน</td></tr>
+      <tr><td>ระยะเสาอากาศจากแกนหมุน</td><td class="num">45 mm</td><td>สั้นลงเพราะมอเตอร์ใหญ่ขึ้น (ลดน้ำหนัก)</td></tr>
+      <tr><td>รูยึดจานบน</td><td>ใต้หัว</td><td>M3 × 3-4 จุด</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ============ 6. มอเตอร์ ============ -->
+<section id="motor">
+  <h2>6. มอเตอร์ Feetech STS3215 (อ้างอิง)</h2>
+  <div class="card">
+    <table>
+      <tr><th>รายการ</th><th>ค่า</th><th>หมายเหตุ</th></tr>
+      <tr><td>ขนาดตัว (W×D×H)</td><td class="num">≈ 40 × 20 × 40.5 mm</td><td class="warn">วัดจริงก่อนออกแบบช่องยึด</td></tr>
+      <tr><td>น้ำหนัก</td><td class="num">≈ 64 g</td><td>หัว 6 ตัว ≈ 384 g + จาน/กล้อง</td></tr>
+      <tr><td>แรงบิด</td><td class="num">19 kg·cm @ 7.4V</td><td>มากพอสำหรับ Stewart</td></tr>
+      <tr><td>แรงดัน</td><td class="num">6.0–8.4V (ใช้ 7.4V 2S LiPo)</td><td>แยกจาก logic 5V RPi</td></tr>
+      <tr><td>ช่วงหมุน / ความละเอียด</td><td class="num">360° / 4096 step</td><td>กึ่งกลาง = 2048</td></tr>
+      <tr><td>เพลา / horn</td><td class="warn">spline (วัดจริง)</td><td>ใช้ horn ที่ให้มาหรือเจาะเพิ่ม</td></tr>
+      <tr><td>รูยึดมอเตอร์</td><td class="warn">วัดจริง</td><td>ระบุระยะรูเพื่อเจาะจานล่าง</td></tr>
+      <tr><td>Baudrate / Protocol</td><td class="mono">1,000,000 / Feetech</td><td>half-duplex TTL ผ่าน USB-TTL</td></tr>
+    </table>
+    <p class="note">🔌 การเดินสาย: ไฟ 7.4V ต่อทุกตัว (bus) — สัญญาณ TTL ต่อ USB-TTL (RX ต้องผ่านไดโอด)</p>
+  </div>
+</section>
+
+<!-- ============ 7. ช่วงการเคลื่อนที่ ============ -->
+<section id="motion">
+  <h2>7. ช่วงการเคลื่อนที่ (คำนวณจาก config + IK)</h2>
+  <div class="card">
+    <table>
+      <tr><th>ท่า</th><th>ขีดจำกัด (config)</th><th>ความยาวขา (คำนวณ)</th></tr>
+      <tr><td>home (z=70)</td><td>—</td><td class="num">79.81 mm ทุกขา</td></tr>
+      <tr><td>z ต่ำสุด 58 mm</td><td><code>head_z_mm (58,82)</code></td><td class="num">69.52 mm</td></tr>
+      <tr><td>z สูงสุด 82 mm</td><td>—</td><td class="num">90.52 mm</td></tr>
+      <tr><td>roll ±30° (z=70)</td><td><code>head_roll_deg ±30</code></td><td class="num">62.85 – 101.24 mm</td></tr>
+      <tr><td>pitch ±30° (z=70)</td><td><code>head_pitch_deg ±30</code></td><td class="num">63.30 – 99.14 mm</td></tr>
+      <tr><td>yaw ±60° (z=70)</td><td><code>head_yaw_deg ±60</code></td><td class="num">108.74 mm</td></tr>
+      <tr><td>ขีดจำกัดกลไก 2-bar</td><td>—</td><td class="num">45 – 125 mm <span class="ok">(ผ่านทุกท่า ✅)</span></td></tr>
+    </table>
+    <p class="note">ตรวจสอบแล้วทุกท่าในขีดจำกัดอยู่ในช่วงกลไก (45–125 mm) — ปลอดภัยไม่มีก้านล็อก</p>
+    <h3>ตำแหน่ง servo (crank-rod, home)</h3>
+    <table>
+      <tr><th>ค่า</th><th>ตัวเลข</th></tr>
+      <tr><td>มุมแขนที่ home</td><td class="num">θ = 83.31°</td></tr>
+      <tr><td>ตำแหน่ง servo ที่ home</td><td class="num">≈ 2996 / 4095</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ============ 8. ประกอบ ============ -->
+<section id="assemble">
+  <h2>8. ลำดับประกอบ + สิ่งที่ต้องเช็ค</h2>
+  <div class="card">
+    <ol>
+      <li><b>จานล่าง</b>: ยึดมอเตอร์ 6 ตัวที่ R55 (มุม 0°,60°,…) ให้เพลาหันเข้าศูนย์กลาง</li>
+      <li><b>แขนหมุน</b>: ยึดกับเพลา มอเตอร์ตัวที่ 0°/180° (leg0/leg3) หันแขนคนละทิศตาม <code>solution [0,1,0,1,0,1]</code></li>
+      <li><b>ก้านต่อ</b>: ต่อปลายแขน → จุดต่อจานบน (ลูกบอล)</li>
+      <li><b>จานบน</b>: ประกอบก้านทั้ง 6 ให้จานได้ระดับ (z≈70 mm)</li>
+      <li><b>หัว + กล้อง + เสาอากาศ</b>: ยึดบนจานบน หน้า (+Y) ตรง leg0</li>
+      <li><b>ฐาน</b>: ต่อมอเตอร์ base (ID 7) + ยึดจานล่างที่สูง ~80 mm จากพื้น</li>
+      <li>รัน <code>scripts/calibrate.py --hardware</code> เพื่ออ่าน home จริง → <code>leg_home_pos</code></li>
+    </ol>
+    <p class="note">✅ หลังประกอบ: <code>self_test.py</code> + <code>calibrate.py --verify</code> ควร error ต่ำ</p>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <p>แหล่งข้อมูล: <code>config/robot_config.py</code> (DEFAULT_CONFIG), <code>config/calibration.json</code>
+  (leg_home = 79.8063), <code>src/stewart.py</code> (IK/FK), <code>scripts/generate_sample_stls.py</code> (ขนาด STL)</p>
+  <p>⚠️ ค่ามอเตอร์ STS3215 (ขนาด/รูยึด/เพลา) เป็นค่าอ้างอิง — <b>วัดจากตัวจริงก่อนออกแบบ</b> และถ้าแก้ config ให้อัปเดตเอกสารนี้ด้วย</p>
+</footer>
+
+</body>
+</html>
