@@ -20,13 +20,16 @@ def test_llm(cfg) -> bool:
     import time
 
     llm = cfg["llm"]
+    api_key = llm.get("api_key")
     print(f"[LLM] url   = {llm['url']}")
     print(f"[LLM] model = {llm['model']}")
-    if not OllamaClient(url=llm["url"]).ping():
-        print("  ❌ Ollama server ติดต่อไม่ได้ (เปิด: ollama serve บนเครื่องนั้น)")
+    # ⚠️ ต้องส่ง api_key ด้วย — endpoint อาจอยู่หลัง proxy ที่ตอบ 401 ถ้าไม่ใส่
+    if not OllamaClient(url=llm["url"], api_key=api_key).ping():
+        print("  ❌ Ollama server ติดต่อไม่ได้ (เปิด: ollama serve บนเครื่องนั้น)"
+              + (" / api_key ไม่ถูกต้องหรือไม่ได้ส่ง" if api_key else ""))
         return False
     client = OllamaClient(
-        url=llm["url"], model=llm["model"],
+        url=llm["url"], model=llm["model"], api_key=api_key,
         system_prompt=llm.get("system_prompt"),
         temperature=llm.get("temperature", 0.7),
         timeout=llm.get("timeout", 120.0),

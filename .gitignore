@@ -19,6 +19,10 @@ config/local_config.json
 # แคช / ไฟล์ชั่วคราว
 cache/
 
+# ผลลัพธ์จาก build exe (PyInstaller)
+dist/
+build/
+
 # third_party = โคลน official SDK (ติดตั้งตาม patch/README.md)
 third_party/
 

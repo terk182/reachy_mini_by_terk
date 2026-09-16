@@ -16,8 +16,10 @@ import hashlib
 import os
 import re
 import tempfile
+import threading
 
 _engine = None  # pyttsx3 engine (สร้างครั้งเดียว)
+_cache_lock = threading.Lock()  # กันสังเคราะห์ประโยคเดียวกันพร้อมกัน (prewarm vs main)
 
 # ช่วง Unicode ของอีโมจิ/สัญลักษณ์ (กว้างพอสำหรับ emoji ทั่วไป)
 _EMOJI_RE = re.compile(
@@ -74,7 +76,8 @@ def synthesize_to_file(text: str, lang: str = "th") -> str | None:
         return None
     try:
         from gtts import gTTS
-        mp3 = os.path.join(tempfile.gettempdir(), "reachy_tts.mp3")
+        fd, mp3 = tempfile.mkstemp(suffix=".mp3", prefix="reachy_tts_")
+        os.close(fd)
         gTTS(text, lang=lang).save(mp3)
         return mp3
     except Exception as exc:  # noqa: BLE001
@@ -102,17 +105,33 @@ def synthesize_to_file_cached(text: str, lang: str = "th") -> str | None:
     path = _cache_path(text, lang)
     if os.path.exists(path) and os.path.getsize(path) > 0:
         return path
-    try:
-        from gtts import gTTS
-        os.makedirs(_CACHE_DIR, exist_ok=True)
-        # เขียน tmp ในไดรฟ์เดียวกับ cache (os.replace ข้าม drive ไม่ได้บน Windows)
-        tmp = path + ".tmp"
-        gTTS(text, lang=lang).save(tmp)
-        os.replace(tmp, path)
-        return path
-    except Exception as exc:  # noqa: BLE001
-        print(f"[TTS] สังเคราะห์ล้มเหลว ({exc})")
-        return None
+
+    with _cache_lock:
+        # double-check — thread อื่นอาจสังเคราะห์เสร็จระหว่างรอ lock
+        if os.path.exists(path) and os.path.getsize(path) > 0:
+            return path
+        try:
+            from gtts import gTTS
+            os.makedirs(_CACHE_DIR, exist_ok=True)
+            # tmp ชื่อไม่ซ้ำ (tempfile.mkstemp) — กัน prewarm กับ main ชนกัน
+            fd, tmp = tempfile.mkstemp(suffix=".mp3", dir=_CACHE_DIR)
+            os.close(fd)
+            gTTS(text, lang=lang).save(tmp)
+            try:
+                os.replace(tmp, path)
+            except OSError as exc_lock:
+                # ไฟล์ปลายทางกำลังถูกใช้ (เช่น เล่นอยู่) → ลบแล้วแทนที่ใหม่
+                try:
+                    os.remove(path)
+                    os.replace(tmp, path)
+                except OSError:
+                    # ยัง lock อยู่ → คืนไฟล์ tmp ที่เพิ่งสร้าง (เล่นได้เลย คราวหน้าค่อย cache ใหม่)
+                    print(f"[TTS] cache ถูก lock ({exc_lock}) — ใช้ไฟล์ชั่วคราวแทน")
+                    return tmp
+            return path
+        except Exception as exc:  # noqa: BLE001
+            print(f"[TTS] สังเคราะห์ล้มเหลว ({exc})")
+            return None
 
 
 def prewarm_phrases(texts, lang: str = "th", block: bool = False) -> None:

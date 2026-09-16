@@ -377,6 +377,35 @@ def test_clean_for_speech():
     print("clean_for_speech ผ่าน ✅")
 
 
+def test_thai_time():
+    """บริบทวัน–เวลาไทย (offline — ไม่ต้องใช้ network)"""
+    import datetime as dt
+
+    from src.thai_time import (
+        build_time_context,
+        childrens_day,
+        thai_date,
+        thai_weekday,
+        upcoming_events,
+    )
+
+    # วันอ้างอิงจริง: 1 ม.ค. 2024 = วันจันทร์
+    assert thai_weekday(dt.date(2024, 1, 1)) == "จันทร์"
+    assert thai_date(dt.date(2026, 9, 15)) == "15 กันยายน 2569"
+    # วันเด็กแห่งชาติ = เสาร์ที่ 2 ของมกราคม (ปี 2026 = 10 ม.ค.)
+    cd = childrens_day(2026)
+    assert cd.weekday() == 5 and cd.month == 1 and cd.day == 10, cd
+    # วันสำคัญใกล้ ๆ: 20 ธ.ค. 2026 → คริสต์มาสอีก 5 วัน
+    ev = dict(upcoming_events(dt.date(2026, 12, 20), days_ahead=7))
+    assert ev.get("วันคริสต์มาส") == 5, ev
+    # ข้อความบริบท: มีวัน/วันที่/เวลา (15 ก.ย. 2026 = วันอังคาร)
+    ctx = build_time_context(dt.datetime(2026, 9, 15, 14, 35))
+    assert "วันอังคารที่ 15 กันยายน 2569" in ctx and "14:35" in ctx, ctx
+    # วันสำคัญระยะไกล: วันพ่อ 5 ธ.ค. = อีก 81 วัน (ให้ LLM อ่าน ไม่ต้องคำนวณเอง)
+    assert "วันพ่อแห่งชาติ อีก 81 วัน" in ctx, ctx
+    print("thai_time ผ่าน ✅")
+
+
 def test_vision_helpers():
     """Smoother + deadzone + PresenceDetector (ไม่ต้องใช้กล้อง)"""
     from src.vision import PresenceDetector, Smoother, apply_deadzone
@@ -445,4 +474,5 @@ if __name__ == "__main__":
     test_real_robot_payload()
     test_stt_import()
     test_clean_for_speech()
+    test_thai_time()
     print("\nSelf-test ทั้งหมดผ่าน ✅")

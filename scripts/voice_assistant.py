@@ -13,7 +13,9 @@ r"""Voice assistant ต่อเนื่อง — ฟังเสียง →
 import argparse
 import queue
 import random
+import re
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -33,6 +35,7 @@ from src.robot import Robot  # noqa: E402
 from src.robot_tools import TOOLS, execute as execute_tool  # noqa: E402
 from src.song import MELODIES, sing  # noqa: E402
 from src.stt import listen, list_mics, resolve_mic  # noqa: E402
+from src.thai_time import build_time_context  # noqa: E402
 from src.vision_control import GESTURE_ACTIONS, VisionThread  # noqa: E402
 
 # คำสั่งหยุด (พูดแล้วออก) — ตรวจแบบระวัง substring กัน false positive
@@ -72,12 +75,15 @@ POST_SPEECH_GAP = 0.5      # วิ พักหลังพูด ก่อน�
 FALLBACK_COOLDOWN = 8.0    # วิ คั่นการพูด "ว่าไงนะ" (กันพูดรัว)
 GREETING_COOLDOWN = 12.0   # วิ ห้ามทักทาย "คนเข้ามา" ซ้ำ (กัน face detection flicker)
 GREETING_WORDS = ("สวัสดี", "หวัดดี", "hello", "hi", "hey", "ทักทาย", "ไง")
-GREETING_REPLIES = ("สวัสดีจ้า!", "ว่าไงจ๊ะ มาทักทายเราหรอ!", "ดีจัง ได้เจอเธอแล้ว!")
+GREETING_REPLIES = ("สวัสดีจ้า!", "หวัดดีจ้า มาแล้วเหรอ!", "ดีใจที่ได้เจอนะ!")
+# แนะนำตัว → โบกมือ + แนะนำตัวเองเต็ม ๆ
+INTRO_WORDS = ("แนะนำตัว", "แนะนำตัวเอง", "แนะนำตัวหน่อย")
+INTRO_REPLY = ("สวัสดีจ้า! เราชื่อน้องรีชชี่ เป็นเพื่อนคู่หูของเด็ก ๆ คุยเล่นก็ได้ ตอบคำถามก็ได้ ช่วยการบ้าน เล่านิทาน ร้องเพลง หรือเต้นให้ดูก็ได้นะ มาเล่นกัน!",)
 SING_WORDS = ("ร้องเพลง", "ร้องให้ฟัง", "sing", "song", "เพลงให้ฟัง", "ร้องเพลงให้ฟัง")
 DANCE_WORDS = ("เต้น", "เตน", "dance")
-DANCE_REPLIES = ("เต้นแล้วจ้า สนุกไหม?", "ดูท่าเต้นของหนูสิ!", "โยก ๆ สนุกจังเลย!")
+DANCE_REPLIES = ("เต้นให้ดูแล้ว สนุกไหม?", "ดูท่าเราสิ!", "โยก ๆ กันดีกว่า!")
 WAVE_WORDS = ("โบกมือ", "โบก", "ไหว้", "wave")
-WAVE_REPLIES = ("สวัสดีจ้า!", "โบกมือทักทายทุกคนเลย!", "สวัสดีทุกคนจ้า!")
+WAVE_REPLIES = ("สวัสดีจ้า!", "ยินดีต้อนรับจ้า!", "หวัดดีทุกคน!")
 # ตอบสั้น ๆ ตามท่ามือ (vision) — พูดเมื่อเห็นท่ามือจากกล้อง
 GESTURE_REPLIES = {
     "thumbs_up": ("ถูกใจเลย!", "เยี่ยมไปเลย!"),
@@ -86,13 +92,14 @@ GESTURE_REPLIES = {
     "love": ("ขอบคุณนะ!", "รักเหมือนกัน!"),
     "fist": ("โอเค!", "รับทราบ!"),
     "point": ("มีอะไรอยู่ตรงนั้นเหรอ?",),
+    "rock": ("จัดไป! ร็อคแอนด์โรล!", "เมทัลจัดเต็มเลย!", "🤘 โยกหัวตามเพลง!"),
 }
 # คำถามตัวตน/ความสามารถ → ตอบทันทีแบบคงที่ (แม่น + เร็ว ไม่รอ LLM ที่อาจตอบเพี้ยน)
 SELF_ANSWERS = (
     (("ชื่ออะไร", "คุณชื่อ", "เธอชื่อ", "เป็นใคร"),
-     "ฉันชื่อน้องรีชชี่จ้า! หุ่นยนต์เพื่อนเล่นของหนูเอง"),
+     "เราชื่อน้องรีชชี่ เป็นเพื่อนคู่หูของเด็ก ๆ จ้า"),
     (("ทำอะไรได้", "ความสามารถ", "ช่วยอะไรได้", "เล่นอะไรได้"),
-     "หนูเต้นได้ ร้องเพลงได้ เล่าเรื่องได้ แล้วก็คุยกับทุกคนได้ด้วยนะ!"),
+     "เล่นเกมเลข ท่องศัพท์ เล่านิทาน ร้องเพลง เต้น หรือช่วยการบ้านก็ได้นะ"),
 )
 # ท่อง ABC/A-Z → ตอบคงที่ (LLM ตัวเล็กท่องตัวอักษรเพี้ยน)
 ABC_WORDS = ("ถึง z", "ถึง ซี", "ถึงซี", "abc", "ตัวอักษร", "a ถึง")
@@ -110,22 +117,61 @@ TOOL_INTENT = {
     "turn": ("หมุน", "หัน", "turn"),
     "random_cute": ("ทำอะไร", "โชว์", "น่ารัก"),
     "sing": ("ร้อง", "เพลง", "sing", "song", "ช้าง"),
+    "sway": ("ส่ายเอว", "โยกตัว", "ส่ายเอวหน่อย", "sway"),
+    "excited": ("ตื่นเต้น", "ตื่นเต้นมาก", "excited", "ดีใจสุด ๆ"),
+    "stretch": ("ยืดตัว", "ยืดเส้น", "ยืด", "stretch", "เมื่อย"),
+    "sleep": ("หลับ", "ง่วง", "ง่วงนอน", "นอน", "sleep"),
+    "lean": ("โน้มตัว", "เอนตัว", "โน้ม", "lean"),
+    "cheer": ("เชียร์", "ไชโย", "cheer", "เย้"),
+    "headbang": ("ร็อค", "เฮดแบง", "headbang", "เมทัล", "โยกหัว", "rock", "โหม่งหัว"),
 }
-FALLBACK_PHRASES = (
-    "ว่าไงนะ?",
-    "ได้ยินไม่ชัดเลย พูดอีกทีได้ไหม",
-    "เข้ามาใกล้ ๆ หน่อยได้ไหม",
+
+# wakeword — พูด "รีชชี่ ..." ก่อน หุ่นถึงจะตอบ (กันเสียงรบกวน/คนคุยข้าง ๆ ปลุกหุ่น)
+# ⚠️ STT ฟังชื่อ "รีชชี่" เพี้ยนหลายแบบ (มิชชี่/ลิชชี/ลิชชี้/litchi...) → ใช้ทั้งลิสต์ + regex
+WAKE_WORDS = (
+    "น้องรีชชี่", "น้องรีชชี้", "น้องมิชชี่", "hey reachy", "hey richie",
+    "รีชชี่ครับ", "รีชชี่จ้า", "รีชชี่คะ", "รีชชี่ว่า", "รีชชี่ช่วย",
+    "รีชชี่", "รีชชี้", "reachy", "richie", "ritchie", "reachi",
+    "มิชชี่", "มิชชี้", "มีชชี่", "มี่ชี่",
+    "ลิชชี่", "ลิชชี้", "ลิชี่", "ลิทชี่", "ลิทชี้",
+    "litchi", "lichi",
 )
+# จับโครงสร้าง "รีชชี่/มิชชี่/ลิชชี/วิชชี้/..." ที่ STT สะกดเพี้ยนไม่รู้จบ
+# = (รี|ริ|มิ|มี|มี่|ลิ|ลี|นิ|นี่|วิ|วี) + ชช + สระ/วรรณยุกต์ (ต้องมี ช ช 2 ตัว — กันคำอย่าง "มีชีวิต" หลุด)
+_WAKE_RE = re.compile(r"(?:รี|ริ|มิ|มี|มี่|ลิ|ลี|นิ|นี่|วิ|วี)ชช[ีิ][่้]?")
+WAKE_REPLIES = ("เรียกเราหรือ?", "ว่าไง มาคุยกัน!", "อู้หู มาแล้ว พูดต่อเลย!")
 
 
-def ask_llm(client, robot, history):
+def is_wakeword(text: str) -> bool:
+    """คำปลุก? — ตรงคำในลิสต์ หรือตรงรูปแบบชื่อที่ STT สะกดเพี้ยน"""
+    low = text.lower()
+    if any(w in low for w in WAKE_WORDS):
+        return True
+    return bool(_WAKE_RE.search(low))
+
+
+def strip_wakeword(text: str) -> str:
+    """ลบคำปลุกออกจากประโยค เหลือคำสั่ง (เช่น 'รีชชี่ เต้นหน่อย' -> 'เต้นหน่อย')"""
+    t = text.lower()
+    for w in sorted(WAKE_WORDS, key=len, reverse=True):
+        t = t.replace(w, " ")
+    t = _WAKE_RE.sub(" ", t)
+    return re.sub(r"\s+", " ", t).strip(" ,.!?")
+
+
+def ask_llm(client, robot, history, extra_context=None):
     """คุย LLM แบบรองรับ tool calling — จำกัดทำท่าแค่ 1 ครั้งต่อคำตอบ
 
     โมเดลเล็ก (qwen3.5:4b) มักเรียก tool ซ้ำไม่หยุด → ทำเฉพาะ tool แรก
     แล้วถามรอบสุดท้ายแบบไม่ส่ง tools (บังคับตอบเป็นข้อความล้วน)
+    extra_context: (optional) ข้อความใส่ก่อน system_prompt (เช่น ข้อมูลเพิ่มเติม)
     คืน (ข้อความ, did_tool) — did_tool=True แปลว่าทำท่าไปแล้ว (กันทำซ้ำจาก gesture)
     """
-    msg = client.chat_tools(history, TOOLS)
+    sp = client.system_prompt
+    if extra_context:
+        sp = extra_context + "\n\n" + sp
+
+    msg = client.chat_tools(history, TOOLS, system_prompt=sp)
     tool_calls = msg.get("tool_calls")
     if not tool_calls:
         return (msg.get("content") or ""), False
@@ -144,7 +190,7 @@ def ask_llm(client, robot, history):
     if name in TOOL_INTENT and last_user and not any(
         k in last_user.lower() for k in TOOL_INTENT[name]
     ):
-        final = client.chat_tools(history, None)
+        final = client.chat_tools(history, None, system_prompt=sp)
         return (final.get("content") or ""), False
 
     print(f"🛠️ หุ่นทำท่า: {name}")
@@ -153,7 +199,7 @@ def ask_llm(client, robot, history):
     history.append({"role": "tool", "tool_name": name, "content": result})
 
     # ถามครั้งสุดท้ายโดยไม่ส่ง tools — บังคับตอบเป็นข้อความ (กันเรียก tool ซ้ำ)
-    final = client.chat_tools(history, None)
+    final = client.chat_tools(history, None, system_prompt=sp)
     return (final.get("content") or ""), True
 
 
@@ -213,6 +259,39 @@ def drain_vision_events(vision, robot):
                 safe_motion(speak_with_motion, robot, random.choice(replies))
 
 
+def _listen_interruptible(listen_fn, vision):
+    """ฟังเสียงใน thread แยก — ถ้ามีท่ามือ/คนเข้ามา ให้ขัดจังหวะการฟังทันที
+
+    listen_fn(stop_event) → (text, heard)  เรียกใน worker thread
+    คืน (text, heard, interrupted)
+      interrupted=True → โดนท่ามือ/vision ขัด → caller ทำท่าแล้วฟังรอบใหม่
+    """
+    stop = threading.Event()
+    result: dict = {}
+    done = threading.Event()
+
+    def worker():
+        try:
+            result["text"], result["heard"] = listen_fn(stop)
+        except Exception as exc:  # noqa: BLE001
+            print(f"⚠️ STT ผิดพลาด: {exc}")
+            result["text"], result["heard"] = "", False
+        done.set()
+
+    threading.Thread(target=worker, daemon=True).start()
+    interrupted = False
+    while not done.is_set():
+        # มีท่ามือ/คนเข้ามาระหว่างฟัง → สั่งหยุดฟัง (ขัดจังหวะ)
+        if vision is not None and not vision.events.empty():
+            stop.set()
+            interrupted = True
+            break
+        done.wait(timeout=0.1)
+    if interrupted:
+        done.wait(timeout=1.0)  # รอ worker ปล่อยไมค์ (record abort ~50ms)
+    return result.get("text", ""), result.get("heard", False), interrupted
+
+
 def main():
     parser = argparse.ArgumentParser(description="Voice assistant ต่อเนื่อง")
     parser.add_argument("--hardware", action="store_true", help="ใช้หุ่นจริง")
@@ -233,7 +312,10 @@ def main():
                         help="กล้อง vision (ชื่อหรือ id, default 'lifecam')")
     parser.add_argument("--show", action="store_true",
                         help="เปิดหน้าต่าง preview กล้อง (กรอบหน้า + ท่ามือ)")
+    parser.add_argument("--wakeword", action="store_true",
+                        help="เปิด wakeword — ต้องพูด 'รีชชี่' ก่อน ถึงจะตอบ (default: ปิด)")
     args = parser.parse_args()
+    wakeword = args.wakeword
 
     if args.list_mics:
         print("อุปกรณ์เสียงเข้า:")
@@ -247,7 +329,7 @@ def main():
     model = args.model or llm_cfg["model"]
 
     # เช็ค Ollama + โมเดล
-    if not OllamaClient(url=llm_cfg["url"]).ping():
+    if not OllamaClient(url=llm_cfg["url"], api_key=llm_cfg.get("api_key")).ping():
         print("⚠️ Ollama ไม่ได้รัน — เปิดด้วย: ollama serve")
         sys.exit(1)
     client = OllamaClient(
@@ -259,6 +341,7 @@ def main():
         max_history=llm_cfg.get("max_history"),
         think=llm_cfg.get("think", False),
         keep_alive=llm_cfg.get("keep_alive", "30m"),
+        api_key=llm_cfg.get("api_key"),
     )
     if model not in client.list_models():
         print(f"⚠️ ยังไม่มีโมเดล {model} — โหลดด้วย: ollama pull {model}")
@@ -303,17 +386,23 @@ def main():
         vision = VisionThread(robot, camera=args.camera, show=args.show)
         vision.start()
 
-    # อุ่น TTS ล่วงหน้า — คำทักทาย/fallback ที่พูดบ่อย ตอบทันที ไม่รอ gTTS (~1.7 วิ)
+    # อุ่น TTS ล่วงหน้า — คำทักทาย/แนะนำตัวที่พูดบ่อย ตอบทันที ไม่รอ gTTS (~1.7 วิ)
     from src.tts import prewarm_phrases
 
-    prewarm_phrases(list(GREETING_REPLIES) + list(FALLBACK_PHRASES))
+    prewarm_phrases(list(GREETING_REPLIES) + [INTRO_REPLY[0]])
 
     history: list[dict] = []
     last_idle = time.time()
     last_fallback = time.time()
     last_health = time.time()
+    ww = "รีชชี่ ..." if wakeword else "ทุกคำ"
     print(f"🤖 พร้อมแล้ว (โมเดล: {model}, ฟังรอบละ {args.duration:.0f} วิ) — "
-          "พูด 'หยุด' เพื่อจบ")
+          f"ปลุกด้วย '{ww}' | พูด 'หยุด' เพื่อจบ")
+
+    # แนะนำตัวตอนเปิดเครื่อง
+    print("🙋 เปิดเครื่อง — แนะนำตัว...")
+    safe_motion(robot.wave)
+    safe_motion(speak_with_motion, robot, INTRO_REPLY[0])
 
     try:
         while True:
@@ -327,39 +416,53 @@ def main():
                 drain_vision_events(vision, robot)
                 vision.resume()
             print("🎧 ฟัง...")
-            try:
-                text, heard = listen(
-                    duration=args.duration,
-                    mic=mic_idx,
-                    stt_url=stt_cfg.get("stt_url"),
-                    samplerate=stt_cfg["samplerate"],
-                    model=stt_cfg["model"],
-                    device=stt_cfg["device"],
-                    language=stt_cfg["language"],
-                    early_stop=stt_cfg.get("early_stop", True),
-                    tail_silence=stt_cfg.get("tail_silence", 0.6),
-                    speech_threshold=stt_cfg.get("speech_threshold", 0.01),
-                    report_heard=True,
-                )
-            except Exception as exc:  # noqa: BLE001 — remote STT ล่ม -> fallback local
-                print(f"⚠️ STT ผิดพลาด ({exc}) — fallback ใช้ whisper local")
-                text, heard = listen(
-                    duration=args.duration,
-                    mic=mic_idx,
-                    stt_url=None,
-                    samplerate=stt_cfg["samplerate"],
-                    model=stt_cfg["model"],
-                    device=stt_cfg["device"],
-                    language=stt_cfg["language"],
-                    early_stop=stt_cfg.get("early_stop", True),
-                    tail_silence=stt_cfg.get("tail_silence", 0.6),
-                    speech_threshold=stt_cfg.get("speech_threshold", 0.01),
-                    report_heard=True,
-                )
+
+            def _listen_once(stop_event):
+                try:
+                    return listen(
+                        duration=args.duration,
+                        mic=mic_idx,
+                        stt_url=stt_cfg.get("stt_url"),
+                        samplerate=stt_cfg["samplerate"],
+                        model=stt_cfg["model"],
+                        device=stt_cfg["device"],
+                        language=stt_cfg["language"],
+                        early_stop=stt_cfg.get("early_stop", True),
+                        tail_silence=stt_cfg.get("tail_silence", 0.6),
+                        speech_threshold=stt_cfg.get("speech_threshold", 0.01),
+                        report_heard=True,
+                        stt_api_key=stt_cfg.get("api_key"),
+                        stop_event=stop_event,
+                    )
+                except Exception as exc:  # noqa: BLE001 — remote STT ล่ม -> fallback local
+                    print(f"⚠️ STT ผิดพลาด ({exc}) — fallback ใช้ whisper local")
+                    return listen(
+                        duration=args.duration,
+                        mic=mic_idx,
+                        stt_url=None,
+                        samplerate=stt_cfg["samplerate"],
+                        model=stt_cfg["model"],
+                        device=stt_cfg["device"],
+                        language=stt_cfg["language"],
+                        early_stop=stt_cfg.get("early_stop", True),
+                        tail_silence=stt_cfg.get("tail_silence", 0.6),
+                        speech_threshold=stt_cfg.get("speech_threshold", 0.01),
+                        report_heard=True,
+                        stop_event=stop_event,
+                    )
+
+            # ฟังใน thread — ท่ามือ/คนเข้ามาระหว่างฟัง จะขัดจังหวะให้ทันที
+            text, heard, interrupted = _listen_interruptible(_listen_once, vision)
 
             # หยุดตามหน้าระหว่างพูด/ทำท่า (กันชนกับ vision thread)
             if vision:
                 vision.pause()
+
+            # ท่ามือ/คนเข้ามาที่เกิดระหว่างฟัง → ทำทันที
+            if vision:
+                drain_vision_events(vision, robot)
+            if interrupted:
+                continue  # เพิ่งทำท่า (โดนขัด) → ฟังรอบใหม่ ไม่เอาคำพูดครึ่ง ๆ
 
             if text:
                 last_idle = time.time()
@@ -368,10 +471,30 @@ def main():
                     print("👋 จบการสนทนา")
                     break
 
+                # wakeword: ต้องพูด "รีชชี่ ..." ก่อน ถึงจะตอบ (ยกเว้น "หยุด" ข้างบน)
+                if wakeword and not is_wakeword(text):
+                    print("💤 ยังไม่ปลุก — พูด 'รีชชี่ ...' ก่อนจ้า")
+                    continue
+                text = strip_wakeword(text)
+                if not text:
+                    # พูดแค่ "รีชชี่" ไม่มีคำสั่ง → ถามกลับเบา ๆ
+                    safe_motion(robot.wave)
+                    safe_motion(speak_with_motion, robot, random.choice(WAKE_REPLIES))
+                    time.sleep(POST_SPEECH_GAP)
+                    continue
+
                 # คำทักทาย → โบก + ตอบทันที (ไม่รอ LLM — เร็วและเป็นมิตร)
                 if any(g in text.lower() for g in GREETING_WORDS):
                     safe_motion(robot.wave)
                     safe_motion(speak_with_motion, robot, random.choice(GREETING_REPLIES))
+                    time.sleep(POST_SPEECH_GAP)
+                    continue
+
+                # ขอแนะนำตัว → โบกมือ + แนะนำตัวเองเต็ม ๆ
+                if any(w in text.lower() for w in INTRO_WORDS):
+                    print("🙋 แนะนำตัว...")
+                    safe_motion(execute_tool, robot, "wave", {})
+                    safe_motion(speak_with_motion, robot, INTRO_REPLY[0])
                     time.sleep(POST_SPEECH_GAP)
                     continue
 
@@ -434,7 +557,10 @@ def main():
 
                 history.append({"role": "user", "content": text})
                 try:
-                    reply, did_tool = ask_llm(client, robot, history)
+                    # ฉีดวัน/เวลา/วันสำคัญปัจจุบัน — ไม่งั้นหุ่นตอบ "วันนี้วันอะไร" ไม่ได้
+                    reply, did_tool = ask_llm(
+                        client, robot, history, extra_context=build_time_context()
+                    )
                     if not reply.strip():
                         continue
                 except Exception as exc:  # noqa: BLE001
@@ -458,13 +584,13 @@ def main():
                 safe_motion(speak_with_motion, robot, clean)
                 time.sleep(POST_SPEECH_GAP)
             elif heard:
-                # ได้ยินเสียงแต่ฟังไม่ออก → ท่าสงสัย (จำกัดความถี่กันพูดรัว)
+                # ได้ยินเสียงแต่ฟังไม่ออก → เงียบ (ไม่พูด "ได้ยินไม่ชัด/เข้ามาใกล้ ๆ"
+                # รบกวน) — ขยับหัวเอียงนิดเดียว ถ้าพ้น cooldown กันรัว
                 if time.time() - last_fallback > FALLBACK_COOLDOWN:
+                    print("🔇 ได้ยินเสียงแต่ฟังไม่ออก — เงียบไว้")
                     safe_motion(robot.head_tilt, random.choice((-1, 1)))
-                    safe_motion(speak_with_motion, robot, random.choice(FALLBACK_PHRASES))
                     last_fallback = time.time()
                     last_idle = time.time()
-                    time.sleep(POST_SPEECH_GAP)
             else:
                 # เงียบสนิท → ทำท่า idle น่ารักเป็นระยะ
                 if time.time() - last_idle > IDLE_INTERVAL:

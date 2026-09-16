@@ -31,6 +31,7 @@ class OllamaClient:
         think: bool = False,
         num_predict: int | None = None,
         keep_alive: str = "30m",
+        api_key: str | None = None,
     ):
         self.url = url.rstrip("/")
         self.model = model
@@ -41,20 +42,35 @@ class OllamaClient:
         self.think = think          # False = ไม่คิดในใจก่อนตอบ (ตอบเร็วขึ้นมาก)
         self.num_predict = num_predict  # จำกัดจำนวน token ที่สร้าง
         self.keep_alive = keep_alive  # ค้างโมเดลใน VRAM: "30m"/"-1" ตลอด (ห้าม 0 = unload ทันที)
+        self.api_key = api_key      # ถ้า Ollama อยู่หลัง proxy ที่ต้องใช้ key
 
     # ---------- HTTP ภายใน ----------
+    def _headers(self) -> dict:
+        """headers พื้นฐาน + Authorization ถ้าตั้ง api_key (Ollama หลัง proxy)"""
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
+
     def _request(self, path: str, payload: dict) -> dict:
         """POST JSON → dict"""
         body = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
             f"{self.url}{path}",
             data=body,
-            headers={"Content-Type": "application/json"},
+            headers=self._headers(),
             method="POST",
         )
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            # ต้องดักก่อน URLError (HTTPError เป็น subclass) — 401 = key ผิด, 404 = ไม่มีโมเดล
+            raise OllamaError(
+                f"Ollama ตอบ HTTP {e.code} ({self.url}{path})"
+                + (" — api_key ไม่ถูกต้อง" if e.code == 401 else
+                   " — ไม่มีโมเดลนี้บน server" if e.code == 404 else "")
+            ) from e
         except urllib.error.URLError as e:
             raise OllamaError(f"ติดต่อ Ollama ไม่ได้ ({self.url}): {e}") from e
         except json.JSONDecodeError as e:
@@ -62,10 +78,16 @@ class OllamaClient:
 
     def _get(self, path: str) -> dict:
         """GET → dict"""
-        req = urllib.request.Request(f"{self.url}{path}", method="GET")
+        req = urllib.request.Request(f"{self.url}{path}", method="GET", headers=self._headers())
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            # ต้องดักก่อน URLError (HTTPError เป็น subclass) — 401 = key ผิด
+            raise OllamaError(
+                f"Ollama ตอบ HTTP {e.code} ({self.url}{path})"
+                + (" — api_key ไม่ถูกต้อง" if e.code == 401 else "")
+            ) from e
         except urllib.error.URLError as e:
             raise OllamaError(f"ติดต่อ Ollama ไม่ได้ ({self.url}): {e}") from e
 
@@ -192,7 +214,7 @@ class OllamaClient:
         req = urllib.request.Request(
             f"{self.url}/api/chat",
             data=body,
-            headers={"Content-Type": "application/json"},
+            headers=self._headers(),
             method="POST",
         )
         try:
@@ -207,5 +229,12 @@ class OllamaClient:
                     chunk = (data.get("message") or {}).get("content", "")
                     if chunk:
                         yield chunk
+        except urllib.error.HTTPError as e:
+            # ต้องดักก่อน URLError (HTTPError เป็น subclass) — 401 = key ผิด, 404 = ไม่มีโมเดล
+            raise OllamaError(
+                f"Ollama ตอบ HTTP {e.code} ({self.url}/api/chat)"
+                + (" — api_key ไม่ถูกต้อง" if e.code == 401 else
+                   " — ไม่มีโมเดลนี้บน server" if e.code == 404 else "")
+            ) from e
         except urllib.error.URLError as e:
             raise OllamaError(f"ติดต่อ Ollama ไม่ได้ ({self.url}): {e}") from e

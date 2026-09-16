@@ -134,6 +134,74 @@ TOOLS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "sway",
+            "description": "ส่ายเอว/โยกตัวซ้ายขวานุ่ม ๆ ช้า ๆ",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "times": {"type": "integer", "description": "จำนวนรอบ 1-4 (default 3)"}
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "excited",
+            "description": "ตื่นเต้น — ตัวสั่นเล็กน้อยเร็ว ๆ + กระพือเสา",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "stretch",
+            "description": "ยืดตัว — ยกตัวสูง กางเสา แล้วย่อลง",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "sleep",
+            "description": "ท่าหลับ — ก้มหัว เสาหุบ ค้างสักพัก แล้วตื่น",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "lean",
+            "description": "โน้มตัวไปข้างหน้า-ถอยหลัง",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "cheer",
+            "description": "เชียร์/ไชโย — ชูเสาขึ้นเด้งตัว",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "headbang",
+            "description": "ร็อค/เฮดแบง — โหม่งหัวขึ้นลงเร็ว ๆ แบบเมทัล",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "times": {"type": "integer", "description": "จำนวนรอบ 2-12 (default 8)"}
+                },
+                "required": [],
+            },
+        },
+    },
 ]
 
 
@@ -198,6 +266,27 @@ def execute(robot, name: str, arguments=None) -> str:
             melody = args.get("melody") or "twinkle"
             sing(robot, melody=melody)
             return "ร้องเพลงแล้ว"
+        if name == "sway":
+            robot.sway(_clamp_times(3, 1, 4))
+            return "ส่ายเอวแล้ว"
+        if name == "excited":
+            robot.excited()
+            return "ตื่นเต้นแล้ว"
+        if name == "stretch":
+            robot.stretch()
+            return "ยืดตัวแล้ว"
+        if name == "sleep":
+            robot.sleep_pose()
+            return "หลับไปแป๊บ แล้วตื่นแล้ว"
+        if name == "lean":
+            robot.lean()
+            return "โน้มตัวแล้ว"
+        if name == "cheer":
+            robot.cheer()
+            return "เชียร์แล้ว ไชโย!"
+        if name == "headbang":
+            robot.headbang(_clamp_times(8, 2, 12))
+            return "จัดไป! เฮดแบงแล้ว"
         return f"ไม่มีท่าทางชื่อ {name}"
     except Exception as exc:  # noqa: BLE001 — tool ต้องไม่ทำให้ loop ตาย
         return f"ทำท่า {name} ไม่สำเร็จ: {exc}"

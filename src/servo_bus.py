@@ -103,8 +103,13 @@ class ServoBus:
         print(f"[ServoBus] เปิดพอร์ต {self.port} @ {baudrate} baud")
 
     def _open(self):
-        """เปิด serial (เรียกซ้ำได้ตอน reconnect)"""
-        self.ser = serial.Serial(self.port, self.baudrate, timeout=self.timeout)
+        """เปิด serial (เรียกซ้ำได้ตอน reconnect)
+
+        write_timeout จำเป็น: ถ้าอุปกรณ์ค้าง (USB wedged) ser.write() แบบ
+        ไม่มี timeout จะบล็อกตลอดกาล — ล็อกบัสจะค้างทั้งระบบแบบไม่มี error
+        """
+        self.ser = serial.Serial(self.port, self.baudrate, timeout=self.timeout,
+                                 write_timeout=0.3)
 
     def _reopen_unlocked(self) -> bool:
         """ปิดแล้วเปิดพอร์ตใหม่ (ต้องถือ self._lock อยู่) — คืน True ถ้าสำเร็จ
@@ -127,7 +132,8 @@ class ServoBus:
         candidates = [self.port, _auto_port_or_none()]
         for port in dict.fromkeys(p for p in candidates if p):
             try:
-                self.ser = serial.Serial(port, self.baudrate, timeout=self.timeout)
+                self.ser = serial.Serial(port, self.baudrate, timeout=self.timeout,
+                                         write_timeout=0.3)
                 self.port = port
                 self._torque_on.clear()  # หลังหลุด อาจต้องเปิด torque ใหม่
                 self._last_reconnect = 0.0  # สำเร็จแล้ว — หลุดใหม่ให้ลองใหม่ได้ทันที

@@ -26,6 +26,7 @@ GESTURE_ACTIONS = {
     "love": "bow",
     "fist": "shake_head",
     "point": "look_around",
+    "rock": "headbang",
 }
 
 ALPHA = 0.2              # low-pass ตามหน้า (นุ่ม)

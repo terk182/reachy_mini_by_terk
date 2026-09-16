@@ -276,8 +276,82 @@ class Robot:
         self.set_head_pose_eased(roll=0, pitch=0, duration=0.5, method="ease_in_out")
         return self
 
+    # ---------- ท่าเพิ่ม (โชว์ผู้ใหญ่/สาธิต) ----------
+    def sway(self, times=3, amount=12):
+        """ส่ายเอว — โยกตัวซ้ายขวานุ่ม ๆ ช้า (หมุนฐานเบา ๆ)"""
+        for _ in range(times):
+            self.set_base(-amount, duration=0.9)
+            self.set_base(amount, duration=0.9)
+        self.set_base(0, duration=0.9)
+        return self
+
+    def excited(self, times=4):
+        """ตื่นเต้น — ตัวสั่นเล็กน้อยเร็ว ๆ + กระพือเสา"""
+        for _ in range(times):
+            self.set_base(-6, duration=0.12)
+            self.set_base(6, duration=0.12)
+        self.set_base(0, duration=0.15)
+        for _ in range(4):
+            self.set_antennas(1.0, 1.0, duration=0.08)
+            self.set_antennas(-1.0, -1.0, duration=0.08)
+        self.set_antennas(0, 0, duration=0.15)
+        return self
+
+    def stretch(self, times=2):
+        """ยืดตัว — ยกตัวสูง กางเสา ค้าง แล้วย่อลง"""
+        for _ in range(times):
+            self.set_head_pose_eased(z=80, duration=0.8, method="ease_in_out")
+            self.set_antennas(1.2, -1.2, duration=0.5)
+            self.set_head_pose_eased(z=58, duration=0.9, method="ease_in_out")
+            self.set_antennas(0, 0, duration=0.4)
+        self.set_head_pose_eased(z=70, duration=0.5, method="ease_in_out")
+        return self
+
+    def sleep_pose(self, hold=2.5):
+        """ท่าหลับ — ก้มหัว เสาหุบ ค้าง แล้วค่อยตื่น"""
+        import time
+
+        self.set_antennas(-1.0, -1.0, duration=0.8)
+        self.set_head_pose_eased(z=58, roll=-18, duration=1.2, method="ease_in_out")
+        time.sleep(hold)
+        self.set_head_pose_eased(z=70, roll=0, duration=1.0, method="ease_in_out")
+        self.set_antennas(0, 0, duration=0.6)
+        return self
+
+    def lean(self, times=2):
+        """โน้มตัวไปข้างหน้า-ถอยหลัง (ก้ม+ย่อ / เงย+ยก)"""
+        for _ in range(times):
+            self.set_head_pose_eased(z=60, roll=-14, duration=1.0, method="ease_in_out")
+            self.set_head_pose_eased(z=78, roll=16, duration=1.0, method="ease_in_out")
+        self.set_head_pose_eased(z=70, roll=0, duration=0.7, method="ease_in_out")
+        return self
+
+    def cheer(self, times=2):
+        """เชียร์ — ชูเสา + เด้งตัวขึ้นลง (ไชโย)"""
+        for _ in range(times):
+            self.set_antennas(1.2, -1.2, duration=0.25)
+            self.set_head_pose_eased(z=80, duration=0.3, method="cartoon")
+            self.set_antennas(0, 0, duration=0.1)
+            self.set_head_pose_eased(z=60, duration=0.3, method="cartoon")
+        self.set_head_pose_eased(z=70, duration=0.4, method="ease_in_out")
+        self.set_antennas(1.2, -1.2, duration=0.3)
+        self.set_antennas(0, 0, duration=0.3)
+        return self
+
+    def headbang(self, times=8):
+        """ร็อค/เฮดแบง — โหม่งหัวขึ้นลงเร็ว ๆ แบบเมทัล (nod เร็ว + เสาสะบัด)"""
+        for _ in range(times):
+            self.set_head_pose_eased(roll=-16, duration=0.18, method="cartoon")
+            self.set_head_pose_eased(roll=14, duration=0.18, method="cartoon")
+        self.set_head_pose_eased(roll=0, duration=0.3, method="ease_in_out")
+        for _ in range(3):
+            self.set_antennas(1.2, -1.2, duration=0.12)
+            self.set_antennas(-1.2, 1.2, duration=0.12)
+        self.set_antennas(0, 0, duration=0.2)
+        return self
+
     def random_cute(self):
-        """สุ่มทำท่าทางน่ารัก 1 ท่า (ใช้ตอน idle — ดึงดูดเด็กในงานจัดแสดง)"""
+        """สุ่มทำท่าทางน่ารัก 1 ท่า (ใช้ตอน idle — ดึงดูดคนในงานจัดแสดง)"""
         import random
 
         acts = [
@@ -286,6 +360,9 @@ class Robot:
             lambda: self.head_tilt(1),
             lambda: self.wave(),
             lambda: self.happy(),
+            lambda: self.sway(2),
+            lambda: self.lean(),
+            lambda: self.cheer(1),
             lambda: self.look_around(),
             lambda: self.turn(1),
             lambda: self.turn(-1),

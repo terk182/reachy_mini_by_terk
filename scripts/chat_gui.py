@@ -166,12 +166,13 @@ def main():
     llm_cfg = cfg["llm"]
     model = args.model or llm_cfg["model"]
 
-    # เช็ค Ollama
-    if not OllamaClient(url=llm_cfg["url"]).ping():
+    # เช็ค Ollama — ⚠️ ต้องส่ง api_key ด้วย (proxy ตอบ 401 ถ้าไม่ใส่ key)
+    if not OllamaClient(url=llm_cfg["url"], api_key=llm_cfg.get("api_key")).ping():
         print("⚠️ Ollama server ไม่พร้อม — รัน `ollama serve` ก่อน")
         sys.exit(1)
     client = OllamaClient(
         url=llm_cfg["url"], model=model,
+        api_key=llm_cfg.get("api_key"),
         system_prompt=llm_cfg["system_prompt"],
         temperature=llm_cfg["temperature"],
         timeout=llm_cfg.get("timeout", 120.0),

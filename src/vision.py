@@ -124,6 +124,7 @@ class GestureRecognizer:
     """รู้จำท่ามือด้วย MediaPipe GestureRecognizer
 
     คืนคีย์ท่าที่ normalized: thumbs_up / open_palm / fist / victory / point / love
+    + rock (เขากวาง 🤘) ที่ MediaPipe ไม่รู้จัก — ตรวจจับเองจาก landmark นิ้ว
     คืน None เมื่อไม่พบมือหรือไม่มีท่าที่รู้จัก
     """
 
@@ -166,12 +167,33 @@ class GestureRecognizer:
         rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
         image = self._mp_image(image_format=self._mp_image_format.SRGB, data=rgb)
         result = self._recognizer.recognize(image)
+        # ท่า "เขากวาง/ร็อค" 🤘 — MediaPipe ไม่รู้จัก → ตรวจจับเองจาก landmark ก่อน
+        if result.hand_landmarks and self._is_rock(result.hand_landmarks[0]):
+            return "rock"
         if not result.gestures or not result.gestures[0]:
             return None
         name = result.gestures[0][0].category_name
         if name == "None":
             return None
         return self.GESTURE_MAP.get(name, name)
+
+    @staticmethod
+    def _is_rock(lm) -> bool:
+        """🤘 เขากวาง: นิ้วชี้+นิ้วก้อยเหยียด, นิ้วกลาง+นิ้วนางพับ
+
+        ใช้ระยะถึงข้อมือ (wrist) — ทนการหมุนมือ (ไม่พึ่งแกน y)
+        landmark: 0=wrist, 8=ปลายชี้ 6=กลางชี้, 12/10=กลาง, 16/14=นาง, 20/18=ก้อย
+        """
+        def dist(a: int, b: int) -> float:
+            return ((lm[a].x - lm[b].x) ** 2 + (lm[a].y - lm[b].y) ** 2) ** 0.5
+
+        wrist = 0
+        # เหยียด = ปลายนิ้วไกลจากข้อมือกว่านิ้วกลางของนิ้วนั้น (เผื่อ margin 8%)
+        ext = lambda tip, pip: dist(tip, wrist) > dist(pip, wrist) * 1.08
+        return (
+            ext(8, 6) and ext(20, 18)          # ชี้ + ก้อย เหยียด
+            and not ext(12, 10) and not ext(16, 14)  # กลาง + นาง พับ
+        )
 
     def close(self):
         if self._recognizer is not None:

@@ -32,6 +32,9 @@ import numpy as np
 MODEL_NAME = os.environ.get("STT_MODEL", "large-v3")
 PORT = int(os.environ.get("STT_PORT", "8000"))
 LANGUAGE = os.environ.get("STT_LANGUAGE", "th")
+# คำเฉพาะของโปรเจกต์ — ช่วยให้ whisper สะกดถูก (เช่น "รีชชี่" ที่เคยถอดเป็น ริชิต/ลิเศษ)
+# hotwords ต้องใช้ faster-whisper >= 1.0 (ถ้าเก่ากว่า โค้ดมี fallback ให้)
+HOTWORDS = os.environ.get("STT_HOTWORDS", "รีชชี่ น้องรีชชี่")
 
 _model = None
 _device = "cpu"
@@ -125,7 +128,20 @@ class Handler(BaseHTTPRequestHandler):
                 x_new = np.linspace(0, 1, num=int(len(audio) * 16000 / sr))
                 audio = interp(x_new, x_old, audio)
             model, _device = get_model()
-            segments, _info = model.transcribe(audio, language=LANGUAGE, beam_size=5)
+            # condition_on_previous_text=False: ลดอาการพูดวนซ้ำ ("โอเค โอเค โอเค")
+            # hotwords: บังคับคำศัพท์เฉพาะ (ชื่อหุ่น) — ช่วยมากกับคลิปสั้น
+            kwargs = {"condition_on_previous_text": False}
+            if HOTWORDS:
+                kwargs["hotwords"] = HOTWORDS
+            try:
+                segments, _info = model.transcribe(
+                    audio, language=LANGUAGE, beam_size=5, **kwargs)
+            except TypeError:
+                # faster-whisper เก่าไม่รู้จัก hotwords → ถอดแบบเดิม
+                print("[STT] hotwords ไม่รองรับใน faster-whisper นี้ — ถอดแบบปกติ")
+                segments, _info = model.transcribe(
+                    audio, language=LANGUAGE, beam_size=5,
+                    condition_on_previous_text=False)
             text = "".join(seg.text for seg in segments).strip()
             self._send(200, {"text": text})
         except Exception as exc:  # noqa: BLE001
