@@ -34,7 +34,8 @@ PORT = int(os.environ.get("STT_PORT", "8000"))
 LANGUAGE = os.environ.get("STT_LANGUAGE", "th")
 # คำเฉพาะของโปรเจกต์ — ช่วยให้ whisper สะกดถูก (เช่น "รีชชี่" ที่เคยถอดเป็น ริชิต/ลิเศษ)
 # hotwords ต้องใช้ faster-whisper >= 1.0 (ถ้าเก่ากว่า โค้ดมี fallback ให้)
-HOTWORDS = os.environ.get("STT_HOTWORDS", "รีชชี่ น้องรีชชี่")
+# ⚠️ เครื่องที่ deploy แล้ว: ตั้ง env STT_HOTWORDS="พี่ทด น้องนุ" แล้วรีสตาร์ทด้วย
+HOTWORDS = os.environ.get("STT_HOTWORDS", "พี่ทด น้องนุ")
 
 _model = None
 _device = "cpu"

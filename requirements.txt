@@ -14,3 +14,6 @@ miniaudio>=1.71   # decode MP3 → PCM สำหรับขยับหัว�
 # STT (Speech-to-Text) ภาษาไทย
 faster-whisper>=1.1
 sounddevice>=0.4
+
+# เต้นตามเพลง — ฟังเสียงที่ออกลำโพง (WASAPI loopback) เพื่อจับจังหวะ
+soundcard>=0.4.6

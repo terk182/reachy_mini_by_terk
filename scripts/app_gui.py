@@ -5,8 +5,8 @@
 
 ฟีเจอร์:
 - ธีม "kid" น่ารัก ๆ (ค่าเริ่มต้น): หัวเรื่อง + หน้าหุ่น (kaomoji ตามอารมณ์),
-  แชทเป็น bubble (คุณ = ฟ้า / รีชชี่ = เหลือง), ปุ่มสีสันโหญ่ ๆ — เปลี่ยนเป็นธีมเดิมด้วย --theme dark
-- พิมพ์คุย → LLM (persona น้องรีชชี่ เด็ก ๆ) → หุ่นขยับตามอารมณ์ + พูด (เปิด/ปิดได้)
+  แชทเป็น bubble (คุณ = ฟ้า / พี่ทด = เหลือง / น้องนุ = เขียว), ปุ่มสีสันโหญ่ ๆ — เปลี่ยนเป็นธีมเดิมด้วย --theme dark
+- พิมพ์คุย → LLM (persona พี่ทด เด็ก ๆ) → หุ่นขยับตามอารมณ์ + พูด (เปิด/ปิดได้)
 - ปุ่ม 🎤 พูด — ใช้ STT (remote/local ตาม config) + เลือกไมค์จาก dropdown ได้
 - กล้อง: เลือกอุปกรณ์, เปิด/ปิด, ตรวจจับใบหน้า (YuNet), แสดง FPS
 - LLM เรียก tool ได้ (เต้น/โบกมือ/ร้องเพลง) เหมือน voice_assistant
@@ -49,9 +49,11 @@ from src.expressions import (  # noqa: E402
     speak_with_motion,
     strip_emotion_tag,
 )
+from src.dual_llm import TwoRobotConsultant  # noqa: E402
 from src.llm import OllamaClient  # noqa: E402
 from src.robot import Robot  # noqa: E402
 from src.robot_tools import TOOLS, execute as execute_tool  # noqa: E402
+from src.robot_tools import as_text_tool_call  # noqa: E402
 from src.thai_time import build_time_context  # noqa: E402
 
 # ---------- ธีม ----------
@@ -60,7 +62,8 @@ THEMES = {
     "kid": {
         "bg": "#EAF6FF", "fg": "#263238", "panel": "#FFFFFF",
         "video_bg": "#D4ECFF",
-        "bubble_user": "#CDEBFF", "bubble_robot": "#FFF3BF", "sys_fg": "#78909C",
+        "bubble_user": "#CDEBFF", "bubble_robot": "#FFF3BF",
+        "bubble_robot_b": "#DFF5E3", "sys_fg": "#78909C",
         "accent": "#FF8FAB", "accent_hi": "#FF6F91",
         "accent2": "#FFD166", "accent2_hi": "#FFC233",
         "mint": "#9BE7C4", "mint_hi": "#6FDCA8",
@@ -77,7 +80,8 @@ THEMES = {
     "dark": {
         "bg": "#1e1e1e", "fg": "#e0e0e0", "panel": "#252526",
         "video_bg": "#000000",
-        "bubble_user": "#264F78", "bubble_robot": "#33363B", "sys_fg": "#9cdcfe",
+        "bubble_user": "#264F78", "bubble_robot": "#33363B",
+        "bubble_robot_b": "#2E4034", "sys_fg": "#9cdcfe",
         "accent": "#3C6E71", "accent_hi": "#4C8C90",
         "accent2": "#4A4E69", "accent2_hi": "#5A5F80",
         "mint": "#3C6E71", "mint_hi": "#4C8C90",
@@ -128,9 +132,18 @@ class AppGUI:
     """หน้าต่างเดียว: วิดีโอกล้อง + แชท + ปุ่มควบคุมหุ่น"""
 
     def __init__(self, root: tk.Tk, robot, llm: OllamaClient, cam_spec="lifecam",
-                 theme: str = "kid"):
+                 theme: str = "kid", robot_b=None,
+                 consultant: TwoRobotConsultant | None = None):
         self.root = root
         self.robot = robot
+        self.robot_b = robot_b              # 🤝 หุ่นตัวที่ 2 (None = โหมดหุ่นเดี่ยว)
+        self.consultant = consultant        # 🤝 TwoRobotConsultant หรือ None
+        self._b_name = getattr(consultant, "name_b", None) or "น้องนุ"
+        _cfg0 = get_config()
+        _robot0 = _cfg0.get("robot") or {}
+        self._a_name = _robot0.get("name") or "พี่ทด"
+        self._a_voice = _robot0.get("voice")            # "male"/"female"/None
+        self._b_voice = (_cfg0.get("robot_b") or {}).get("voice")
         self.llm = llm
         self.history: list[dict] = []
         self.T = THEMES.get(theme, THEMES["kid"])   # โทนสี/ฟอนต์ทั้งแอป
@@ -198,7 +211,7 @@ class AppGUI:
     # ================= UI =================
     def _build_ui(self):
         T = self.T
-        self.root.title("น้องรีชชี่ — แชท & กล้อง")
+        self.root.title(f"{self._a_name} — แชท & กล้อง")
         self.root.geometry("1140x690")
         self.root.configure(bg=T["bg"])
 
@@ -210,7 +223,7 @@ class AppGUI:
         self._face_label.pack(side="left")
         titles = tk.Frame(header, bg=T["bg"])
         titles.pack(side="left", padx=(10, 0))
-        tk.Label(titles, text="น้องรีชชี่", font=T["font_title"],
+        tk.Label(titles, text=self._a_name, font=T["font_title"],
                  bg=T["bg"], fg=T["fg"]).pack(anchor="w")
         tk.Label(titles, text="เพื่อนคู่หูของเด็ก ๆ — คุยเล่นได้ ล่องกล้องได้",
                  font=T["font"], bg=T["bg"], fg=T["sys_fg"]).pack(anchor="w")
@@ -369,7 +382,7 @@ class AppGUI:
             bg=T["panel"], fg=T["fg"], insertbackground=T["fg"], height=10,
             padx=8, pady=8, relief="flat",
         )
-        # bubble: คุณ (ฟ้า, ขวา) · รีชชี่ (เหลือง, ซ้าย) · ระบบ (เทา)
+        # bubble: คุณ (ฟ้า, ขวา) · หุ่นหลัก (เหลือง) · หุ่นคู่ (เขียว) · ระบบ (เทา)
         self.chat.tag_configure("user", background=T["bubble_user"],
                                 lmargin1=60, lmargin2=60, rmargin=6,
                                 spacing1=4, spacing3=6, justify="right")
@@ -377,6 +390,11 @@ class AppGUI:
                                 lmargin1=6, lmargin2=6, rmargin=60,
                                 spacing1=4, spacing3=6, justify="left")
         self.chat.tag_configure("sys", foreground=T["sys_fg"], spacing1=4, spacing3=6)
+        # 🤝 ข้อเสริมของหุ่นคู่ — สีเขียวอ่อนให้ต่างจากหุ่นหลัก
+        self.chat.tag_configure("robot_b",
+                                background=T.get("bubble_robot_b", T["bubble_robot"]),
+                                lmargin1=6, lmargin2=6, rmargin=60,
+                                spacing1=4, spacing3=6, justify="left")
         self.chat.pack(fill="both", expand=True)
 
         # ปุ่มคำถามด่วน (ปุ่มโหญ่ ๆ สีสัน น่ารักสำหรับเด็ก)
@@ -479,7 +497,7 @@ class AppGUI:
         _collect(self.root)
         self._set_status(f"พร้อมแล้ว — โมเดล {self.llm.model} | กล้อง {self._cam_choice.get()}")
 
-        self._append("ระบบ", f"สวัสดีจ้า! พิมพ์คุยกับรีชชี่ได้เลย (โมเดล: {self.llm.model})")
+        self._append("ระบบ", f"สวัสดีจ้า! พิมพ์คุยกับ{self._a_name}ได้เลย (โมเดล: {self.llm.model})")
         # ปั๊มภาพวิดีโอเป็นรอบ ๆ (สร้าง PhotoImage ต้องทำใน main thread เท่านั้น)
         self.root.after(30, self._pump_video)
 
@@ -726,13 +744,13 @@ class AppGUI:
 
     def _gesture_action(self, tool_name: str):
         """ทำท่าจากท่ามือ — รันในเธรดแยก หุ่นหลุดไม่ทำให้แอปตาย"""
-        self._ui_call(self._set_status, f"✋ เห็นท่ามือ — รีชชี่ทำท่า {tool_name}!")
+        self._ui_call(self._set_status, f"✋ เห็นท่ามือ — {self._a_name}ทำท่า {tool_name}!")
 
         def run():
             self._action_busy = True
             try:
                 self._ensure_robot_alive()
-                execute_tool(self.robot, tool_name, {})
+                execute_tool(self.robot, tool_name, {}, partner=self.robot_b)
             except Exception as exc:  # noqa: BLE001
                 print(f"[GUI] ✋ ทำท่าตามมือไม่สำเร็จ: {exc}")
             finally:
@@ -875,9 +893,11 @@ class AppGUI:
 
     # ================= แชท =================
     def _append(self, who: str, text: str):
-        """เพิ่มข้อความลงแชทเป็น bubble (คุณ = ฟ้าขวา, รีชชี่ = เหลืองซ้าย)"""
-        tag = {"คุณ": "user", "รีชชี่": "robot"}.get(who, "sys")
-        label = {"คุณ": "🧒 คุณ", "รีชชี่": "🐰 รีชชี่"}.get(who, "ℹ️ ระบบ")
+        """เพิ่มข้อความลงแชทเป็น bubble (คุณ = ฟ้าขวา · หุ่นหลักเหลือง · หุ่นคู่เขียว)"""
+        tag = {"คุณ": "user", self._a_name: "robot",
+               self._b_name: "robot_b"}.get(who, "sys")
+        label = {"คุณ": "🧒 คุณ", self._a_name: f"🐰 {self._a_name}",
+                 self._b_name: f"🤖 {self._b_name}"}.get(who, "ℹ️ ระบบ")
         self.chat.configure(state="normal")
         self.chat.insert("end", f"{label}\n{text}\n\n", tag)
         self.chat.see("end")
@@ -920,7 +940,11 @@ class AppGUI:
         threading.Thread(target=self._chat_worker, daemon=True).start()
 
     def _chat_worker(self):
-        """thread คุย LLM (อาจเรียก tool 1 ครั้ง) แล้วสั่งหุ่นตอบ"""
+        """thread คุย LLM (อาจเรียก tool 1 ครั้ง) แล้วสั่งหุ่นตอบ
+
+        โหมดหุ่นคู่: A ได้ร่าง → B อ่าน+เสริม (ยังไม่มีใครพูด) →
+        A พูดคำตอบ → B พูดข้อเสริม (ผลัดกัน)
+        """
         try:
             reply, did_tool = self._chat_with_tools()
         except Exception as exc:  # noqa: BLE001
@@ -930,19 +954,50 @@ class AppGUI:
 
         emotion = detect_emotion(reply)
         clean = strip_emotion_tag(reply).strip() or "เรียบร้อยจ้า"
+
+        # --- 🤫 ให้หุ่น B ปรึกษา/เสริม ก่อนที่ใครจะพูด ---
+        b_text, b_emotion = "", "neutral"
+        if self.consultant is not None and self.robot_b is not None:
+            self._ui_call(self._set_status,
+                          f"🤫 {self._b_name} กำลังปรึกษากับ{self._a_name}...")
+            try:
+                user_text = next(
+                    (str(m.get("content", "")) for m in reversed(self.history)
+                     if m.get("role") == "user"), "")
+                b_raw = self.consultant.review(user_text, clean, self.history)
+                b_emotion = detect_emotion(b_raw)
+                b_text = strip_emotion_tag(b_raw).strip()
+                if b_text:
+                    print(f"[GUI] 🤖 {self._b_name} เสริม: {b_text[:60]!r}")
+            except Exception as exc:  # noqa: BLE001 — B ล่มไม่ให้แชทตาย
+                print(f"[GUI] ⚠️ {self._b_name} ปรึกษาไม่สำเร็จ: {exc}")
+
         self.history.append({"role": "assistant", "content": clean})
+        if b_text:
+            self.history.append({"role": "assistant",
+                                 "content": f"({self._b_name}เสริม) {b_text}"})
         print(f"[GUI] 🤖 ตอบ: {clean[:60]!r} | TTS={'on' if self._speak_var.get() else 'off'}"
               f" anim={'on' if self._anim_var.get() else 'off'}"
-              f" auto-listen={'on' if self._listen_var.get() else 'off'}")
+              f" auto-listen={'on' if self._listen_var.get() else 'off'}"
+              + (f" | 🤝 {self._b_name} เสริม" if b_text else ""))
         self._ui_call(self._set_face, emotion)
-        self._ui_call(self._append, "รีชชี่", f"{clean}\n[อารมณ์: {emotion}]")
+        self._ui_call(self._append, self._a_name, f"{clean}\n[อารมณ์: {emotion}]")
+        if b_text:
+            self._ui_call(self._append, self._b_name,
+                          f"{b_text}\n[อารมณ์: {b_emotion}]")
         self._ui_call(self._finish_turn)
 
         # ขยับ + พูด ในเธรดแยก (ไม่ให้ UI ค้างระหว่างเล่นเสียง)
         if self._speak_var.get() or self._anim_var.get():
-            threading.Thread(target=self._react, args=(emotion, clean), daemon=True).start()
+            if b_text:
+                threading.Thread(target=self._react_two,
+                                 args=(emotion, clean, b_emotion, b_text),
+                                 daemon=True).start()
+            else:
+                threading.Thread(target=self._react, args=(emotion, clean),
+                                 daemon=True).start()
         if did_tool:
-            self._ui_call(self._set_status, "🛠️ รีชชี่ทำท่าให้แล้ว")
+            self._ui_call(self._set_status, f"🛠️ {self._a_name}ทำท่าให้แล้ว")
 
     def _chat_with_tools(self) -> tuple[str, bool]:
         """คุย LLM แบบมี tool calling (ทำท่าได้) — คืน (ข้อความ, ได้ทำท่าไหม)
@@ -955,14 +1010,23 @@ class AppGUI:
         msg = self.llm.chat_tools(self.history, TOOLS, system_prompt=sp)
         calls = msg.get("tool_calls") or []
         if not calls:
-            return (msg.get("content") or "").strip(), False
+            # โมเดลเล็กบางตัวตอบชื่อ tool เป็นข้อความ (“stop_music”) แทน tool_call
+            parsed = as_text_tool_call(msg.get("content"))
+            if not parsed:
+                return (msg.get("content") or "").strip(), False
+            name, targs = parsed
+            print(f"[GUI] แกะ tool จากข้อความ: {name}")
+            calls = [{"function": {"name": name, "arguments": targs}}]
+            msg["tool_calls"] = calls
+            msg["content"] = ""
 
         fn = calls[0].get("function") or {}
         name = fn.get("name", "")
         print(f"[GUI] หุ่นทำท่า: {name}")
         self._ensure_robot_alive()   # กัน USB handle ตายก่อนขยับ
         try:
-            result = execute_tool(self.robot, name, fn.get("arguments", {}))
+            result = execute_tool(self.robot, name, fn.get("arguments", {}),
+                                  partner=self.robot_b)
         except Exception as exc:  # noqa: BLE001 — หุ่นหลุด ไม่ให้แชทตาย
             result = f"ทำท่าไม่สำเร็จ: {exc}"
             print(f"[GUI] ⚠️ {result}")
@@ -977,15 +1041,23 @@ class AppGUI:
         return text, True
 
     def test_voice(self):
-        """ปุ่ม 🔊 — เล่นประโยคสั้นผ่านลำโพง (ทดสอบ TTS โดยไม่ต้องแชท)"""
+        """ปุ่ม 🔊 — เล่นเสียงทดสอบ: พี่ทด (ชาย) แล้วน้องนุ (หญิง) ถ้าเปิดโหมดหุ่นคู่"""
         def run():
             try:
                 from src.tts import play_file, synthesize_to_file_cached
-                path = synthesize_to_file_cached("สวัสดีจ้า นี่คือเสียงของน้องรีชชี่")
-                ok = play_file(path) if path else False
-                print(f"[GUI] 🔊 ทดสอบเสียง: synth={bool(path)} play={ok}")
+                lines = [(self._a_name, self._a_voice)]
+                if self.robot_b is not None:
+                    lines.append((self._b_name, self._b_voice))
+                ok_all = True
+                for name, voice in lines:
+                    path = synthesize_to_file_cached(
+                        f"สวัสดีจ้า นี่คือเสียงของ{name}", voice=voice)
+                    ok = play_file(path) if path else False
+                    ok_all = ok_all and ok
+                    print(f"[GUI] 🔊 ทดสอบเสียง {name}: "
+                          f"synth={bool(path)} play={ok} voice={voice}")
                 self._ui_call(self._set_status,
-                              "🔊 เล่นเสียงทดสอบแล้ว (ได้ยินไหม?)" if ok
+                              "🔊 เล่นเสียงทดสอบแล้ว (ได้ยินไหม?)" if ok_all
                               else "⚠️ เล่นเสียงไม่ได้ — เช็คลำโพง/playsound")
             except Exception as exc:  # noqa: BLE001
                 print(f"[GUI] 🔊 ทดสอบเสียงผิดพลาด: {exc}")
@@ -999,7 +1071,7 @@ class AppGUI:
             self._action_busy = True   # หยุดติดตามหน้าระหว่างทำท่า
             try:
                 self._ensure_robot_alive()
-                result = execute_tool(self.robot, tool_name, {})
+                result = execute_tool(self.robot, tool_name, {}, partner=self.robot_b)
                 self._ui_call(self._set_status, f"🛠️ {result}")
             except Exception as exc:  # noqa: BLE001
                 self._ui_call(self._set_status, f"⚠️ ทำท่าไม่สำเร็จ: {exc}")
@@ -1048,21 +1120,45 @@ class AppGUI:
 
     def _react(self, emotion: str, text: str):
         """ขยับหุ่น + พูด (เรียกจาก worker thread) — หุ่นหลุดไม่ทำให้แอปตาย"""
-        self._ensure_robot_alive()
         self._speak_since = time.time()
         self._speaking = True
         try:
-            if self._anim_var.get():
-                apply_emotion(self.robot, emotion)
-            if self._speak_var.get():
-                speak_with_motion(self.robot, text)
-        except Exception as exc:  # noqa: BLE001
-            print(f"[GUI] ขยับ/พูดผิดพลาด: {exc}")
+            self._react_one(self.robot, emotion, text)
         finally:
             self._speaking = False
             # กันสตรีมไมค์ค้างหลังหุ่นพูด (เจอจริง: หลังตอบ สตรีมส่งศูนย์เป๊ะ)
             # worker จะเป็นคนรีเฟรช (เธรดเดียวคุม stream — กันชน)
             self._refresh_mic = True
+
+    def _react_two(self, emo_a: str, txt_a: str, emo_b: str, txt_b: str):
+        """🤝 หุ่น A พูดก่อน → B เสริม — `_speaking` ครอบทั้งสองช่วง (ไมค์ mute ตลอด)"""
+        self._speak_since = time.time()
+        self._speaking = True
+        try:
+            self._react_one(self.robot, emo_a, txt_a)
+            if self.robot_b is not None and txt_b:
+                self._react_one(self.robot_b, emo_b, txt_b)
+        finally:
+            self._speaking = False
+            self._refresh_mic = True
+
+    def _react_one(self, robot, emotion: str, text: str):
+        """ขยับ+พูดของหุ่นตัวเดียว — error ไม่ล้มทั้งแอป"""
+        try:
+            if robot is self.robot:
+                self._ensure_robot_alive()   # กัน USB handle ตาย
+            elif hasattr(robot, "check_connection"):
+                try:
+                    robot.check_connection()
+                except Exception:  # noqa: BLE001
+                    pass
+            if self._anim_var.get():
+                apply_emotion(robot, emotion)
+            if self._speak_var.get():
+                voice = self._a_voice if robot is self.robot else self._b_voice
+                speak_with_motion(robot, text, voice=voice)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[GUI] ขยับ/พูดผิดพลาด ({type(robot).__name__}): {exc}")
 
     # ---------- โหมดฟังอัตโนมัติ (ไมค์เปิดค้าง) ----------
     def _on_listen_toggle(self):
@@ -1301,7 +1397,7 @@ class AppGUI:
         bg, fg = (("#F6C453", "#3A2C00") if state == "wait"
                   else ("#3ECF6E", "#093C1B"))
         if text is None:
-            text = ("⏳ รอรีชชี่พูดจบก่อนนะ…" if state == "wait"
+            text = (f"⏳ รอ{self._a_name}พูดจบก่อนนะ…" if state == "wait"
                     else "🎤 ถึงตาคุณแล้ว — พูดได้เลย!")
         self._popup_frame.configure(bg=bg)
         self._popup_lbl.configure(text=text, bg=bg, fg=fg)
@@ -1329,8 +1425,8 @@ class AppGUI:
             return
         muted = bool(self._busy or self._speaking)
         if muted:
-            txt = ("⏳ รอรีชชี่พูดจบก่อนนะ…" if self._speaking
-                   else "🤔 รีชชี่กำลังคิด…")
+            txt = (f"⏳ รอ{self._a_name}พูดจบก่อนนะ…" if self._speaking
+                   else f"🤔 {self._a_name}กำลังคิด…")
             if self._popup_state != "wait" or self._popup_text != txt:
                 self._notify_turn("wait", txt)
         elif self._muted_prev:
@@ -1538,8 +1634,18 @@ class AppGUI:
         self._cam_stop.set()
         if self._cam_thread:
             self._cam_thread.join(timeout=1.5)
+        try:   # หยุดเต้นตามเพลง (ถ้ามี) ก่อนปิดพอร์ต
+            from src import dance_sync
+            dance_sync.stop_dance("ปิดแอป")
+        except Exception:  # noqa: BLE001
+            pass
         try:
             self.robot.close()
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            if self.robot_b is not None:
+                self.robot_b.close()
         except Exception:  # noqa: BLE001
             pass
         self.root.destroy()
@@ -1565,6 +1671,10 @@ def main():
                         help="โหมดทดสอบ: ซ่อนหน้าต่าง รัน SEC วินาที (เปิดกล้องถ้าระบุ --camera)")
     parser.add_argument("--smoke-ask", default=None, metavar="ข้อความ",
                         help="โหมดทดสอบ: ส่งข้อความนี้เข้าแชทอัตโนมัติ (ปิดเสียง/ท่า)")
+    parser.add_argument("--robot-b", choices=("none", "sim", "hardware"), default="none",
+                        help="หุ่นตัวที่ 2 สำหรับโหมด 'ปรึกษากันก่อนตอบ' "
+                             "(sim = ยังไม่ต้องมีฮาร์ดแวร์)")
+    parser.add_argument("--port-b", default=None, help="COM port ของหุ่น B")
     args = parser.parse_args()
 
     if args.list_cameras:
@@ -1594,6 +1704,21 @@ def main():
     if not client.ping():
         print("⚠️ LLM server ไม่พร้อม — แชทจะตอบไม่ได้ (แต่กล้องยังใช้ได้)")
 
+    # --- 🎨 MuJoCo สองหุ่นในหน้าต่างเดียว (โหมด sim คู่ + --robot-gui) ---
+    pair_views = None
+    if (args.robot_gui and not args.hardware and not args.real
+            and args.robot_b == "sim"):
+        try:
+            from src.mujoco_sim import create_pair_viewers
+
+            pair_views = create_pair_viewers(cfg)
+            print("[GUI] 🎨 MuJoCo หน้าต่างเดียว 2 หุ่น — "
+                  f"{cfg.get('robot', {}).get('name', 'พี่ทด')} สีเขียว · "
+                  f"{cfg.get('robot_b', {}).get('name', 'น้องนุ')} สีขาว")
+        except Exception as exc:  # noqa: BLE001
+            print(f"⚠️ เปิด MuJoCo คู่ไม่สำเร็จ ({exc}) — ใช้ sim ธรรมดา")
+            pair_views = None
+
     # --- robot ---
     if args.real:
         from src.real_robot import RealRobot
@@ -1606,8 +1731,10 @@ def main():
         backend = "hardware" if args.hardware else "sim"
         try:
             robot = Robot(
-                backend=backend, port=args.port,
-                gui=("mujoco" if (args.robot_gui and backend == "sim") else False),
+                backend=backend, port=(args.port or cfg.get("port")),
+                gui=("mujoco" if (args.robot_gui and backend == "sim"
+                                  and pair_views is None) else False),
+                viewer=(pair_views[0] if pair_views else None),
             )
         except Exception as exc:  # noqa: BLE001 — บอกทางแก้ให้ชัด แทน traceback ยาว ๆ
             print(f"❌ เปิดหุ่นไม่สำเร็จ ({backend}): {exc}")
@@ -1622,10 +1749,54 @@ def main():
         pass
     robot.wake_up()
 
+    # --- 🤝 หุ่น B (โหมดสองตัวปรึกษากันก่อนตอบ) ---
+    robot_b = None
+    consultant = None
+    if args.robot_b != "none":
+        try:
+            from config.robot_config import get_config as _get_cfg_b
+            cfg_b = _get_cfg_b("b")          # cal ของน้องนุ (calibration_b.json)
+            b_sec = cfg.get("robot_b") or {}
+            if not b_sec.get("antennas", True):
+                cfg_b.setdefault("antennas", {})["enabled"] = False   # ไม่มีเสาอากาศ
+            if b_sec.get("motor"):
+                cfg_b.setdefault("motor", {}).update(b_sec["motor"])   # เช่น torque_limit 12V
+            port_b = args.port_b or b_sec.get("port")               # COM3 (น้องนุ)
+            robot_b = Robot(backend=args.robot_b, port=port_b,
+                            config=cfg_b,
+                            viewer=(pair_views[1]
+                                    if pair_views and args.robot_b == "sim" else None))
+            robot_b.wake_up()
+        except Exception as exc:  # noqa: BLE001 — B ล่มไม่ให้แอปตาย
+            print(f"⚠️ เปิดหุ่น B ไม่สำเร็จ ({exc}) — ใช้โหมดหุ่นเดี่ยวต่อ")
+            robot_b = None
+    if robot_b is not None:
+        bcfg = cfg.get("robot_b", {})
+        bllm = bcfg.get("llm", {})
+        llm_b = OllamaClient(
+            url=llm_cfg["url"],
+            model=(bllm.get("model") or model),
+            api_key=llm_cfg.get("api_key"),
+            system_prompt=bcfg.get("system_prompt"),
+            temperature=bllm.get("temperature", 0.6),
+            timeout=llm_cfg.get("timeout", 25.0),
+            num_predict=bllm.get("num_predict", 160),
+            max_history=llm_cfg.get("max_history"),
+            think=llm_cfg.get("think", False),
+            keep_alive=llm_cfg.get("keep_alive", "m"),
+        )
+        consultant = TwoRobotConsultant(
+            client, llm_b,
+            name_a=(cfg.get("robot") or {}).get("name", "พี่ทด"),
+            name_b=bcfg.get("name", "น้องนุ"))
+        print(f"[GUI] 🤝 เปิดโหมดหุ่นคู่: {bcfg.get('name', 'น้องนุ')} "
+              f"({args.robot_b}) — ปรึกษากันก่อนตอบ")
+
     root = tk.Tk()
     if args.smoke:
         root.withdraw()  # ซ่อนหน้าต่าง (โหมดทดสอบ/CI)
-    app = AppGUI(root, robot, client, cam_spec=args.camera, theme=args.theme)
+    app = AppGUI(root, robot, client, cam_spec=args.camera, theme=args.theme,
+                 robot_b=robot_b, consultant=consultant)
     app._save_audio = args.save_audio
     root.protocol("WM_DELETE_WINDOW", app.close)
 

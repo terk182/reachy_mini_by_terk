@@ -453,6 +453,67 @@ def test_gesture_recognizer_smoke():
         print(f"gesture recognizer ข้าม ({exc})")
 
 
+def test_beat_tracker():
+    """BeatTracker: จับ BPM + phase จากเสียง click สังเคราะห์ (ไม่ใช้ลำโพงจริง)"""
+    import time as _time
+    from unittest import mock
+
+    from src.beat import SR, BeatTracker, synth_clicks
+
+    for bpm in (96, 128, 150):
+        tr = BeatTracker(default_bpm=110, use_loopback=False)
+        sig = synth_clicks(bpm, 10.0, offset=0.2)
+        t0, blk = 1000.0, 2048
+        tr._ref, tr._base = t0, 0.0
+        for k, i in enumerate(range(0, sig.size, blk)):
+            t_end = t0 + (i + blk) / SR
+            tr.feed(sig[i:i + blk], t_end)
+            if k % 12 == 0:
+                with mock.patch.object(_time, "time", return_value=t_end):
+                    tr.update_from_analyzer()
+        assert abs(tr.bpm - bpm) < 1.5, (bpm, tr.bpm)
+        n = int((10.0 - 0.2) / (60.0 / bpm)) - 1
+        pos = tr.beat_position(t0 + 0.2 + n * 60.0 / bpm)
+        assert abs(pos - round(pos)) < 0.08, (bpm, pos)
+    print("beat tracker ผ่าน ✅")
+
+
+def test_dance_sync():
+    """dance_sync: ทุกโหมดต่อเนื่อง (ไม่กระชาก) + โหมดไม่พร้อมกันต่างจากพร้อมกันจริง + controller บน sim"""
+    import time as _time
+
+    from src import dance_sync as D
+    from src.beat import BeatTracker
+    from src.robot import Robot
+
+    beats = np.arange(0, 120, 0.02)
+    for m in D.MODES:
+        fa = np.array([D.mode_frame(m, 0, b) for b in beats])
+        fb = np.array([D.mode_frame(m, 1, b) for b in beats])
+        assert np.abs(np.diff(fa, axis=0)).max() < 4.0, m
+        assert np.abs(np.diff(fb, axis=0)).max() < 4.0, m
+        diff = np.abs(fa - fb).mean()
+        assert (diff < 1e-9) if m == "together" else (diff > 1.0), (m, diff)
+    assert D.normalize_mode("เต้นไม่พร้อมกัน") == "free"
+    # ออกท่าเยอะ: ช่วงมันส์ 32 ห้องต้องใช้ท่าหลากหลาย
+    used = {D._move_for(D._segment(b, lambda _b: "hype")[0], None, "hype")
+            for b in np.arange(0, 128, 2.0)}
+    assert len(used) >= 8, len(used)
+    assert D.normalize_style("ตื่นเต้น") == "hype" and D.normalize_style("อินเนอร์") == "inner"
+    assert D.normalize_mode("ผลัดกันเต้น") == "alternate"
+    assert D.normalize_mode("พร้อมกัน") == "together"
+
+    ra, rb = Robot(backend="sim"), Robot(backend="sim")
+    ctl = D.start_dance([ra, rb], mode="mirror",
+                        tracker=BeatTracker(128, use_loopback=False))
+    _time.sleep(0.6)
+    assert ra.dancing and rb.dancing and ctl.running
+    assert D.set_mode("canon") == "canon"
+    assert D.stop_dance() is True
+    assert not ra.dancing and not rb.dancing
+    print("dance sync ผ่าน ✅")
+
+
 if __name__ == "__main__":
     import numpy as np
 
@@ -475,4 +536,6 @@ if __name__ == "__main__":
     test_stt_import()
     test_clean_for_speech()
     test_thai_time()
+    test_beat_tracker()
+    test_dance_sync()
     print("\nSelf-test ทั้งหมดผ่าน ✅")

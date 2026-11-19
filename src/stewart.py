@@ -231,16 +231,23 @@ def forward_kinematics(
     if target.shape != (6,):
         raise ValueError("target_lengths ต้องเป็น array 6 ค่า")
 
+    args = (base_radius, top_radius, top_offset_deg, layout)
+
+    def _resid(v):
+        return np.array(leg_lengths(v[0], v[1], v[2], v[3], *args)) - target
+
     # จุดเริ่มต้น: ค่าเฉลี่ยความยาวขา (ประมาณ z) หรือ x0 ที่ให้มา
     x = (np.array(x0, dtype=float) if x0 is not None
          else np.array([float(np.mean(target)), 0.0, 0.0, 0.0]))
-    residual = float("inf")
+    r = _resid(x)
+    residual = float(np.max(np.abs(r)))
+    best_x, best_res = x.copy(), residual
+
+    # Levenberg–Marquardt: Newton เปล่า ๆ จะ "พุ่ง" ออกนอกคำตอบเมื่องความยาวขา
+    # คลาดเล็กน้อยจากของจริง (backlash ~0.1 mm) — damping + จำกัดก้าวแก้ปัญหานี้
+    lam = 1e-3
+    step_max = np.array([2.0, 0.05, 0.05, 0.05])   # mm / rad ต่อก้าวสูงสุด
     for _ in range(max_iter):
-        lengths = np.array(leg_lengths(
-            x[0], x[1], x[2], x[3], base_radius, top_radius,
-            top_offset_deg, layout))
-        r = lengths - target
-        residual = float(np.max(np.abs(r)))
         if residual < tol:
             break
         jac = np.zeros((6, 4))
@@ -248,12 +255,37 @@ def forward_kinematics(
         for j in range(4):
             xp = x.copy()
             xp[j] += h
-            lp = np.array(leg_lengths(
-                xp[0], xp[1], xp[2], xp[3], base_radius, top_radius,
-                top_offset_deg, layout))
-            jac[:, j] = (lp - lengths) / h
-        dx = np.linalg.lstsq(jac, -r, rcond=None)[0]
-        x += dx
+            jac[:, j] = (_resid(xp) - r) / h
+        jtj = jac.T @ jac
+        jtr = jac.T @ r
+        improved = False
+        for _try in range(8):
+            damp = lam * (np.diag(jtj) + 1e-9)
+            try:
+                dx = np.linalg.solve(jtj + np.diag(damp), -jtr)
+            except np.linalg.LinAlgError:
+                lam *= 10.0
+                continue
+            scale = float(np.max(np.abs(dx) / step_max))
+            if scale > 1.0:                        # จำกัดขนาดก้าว
+                dx /= scale
+            x_new = x + dx
+            r_new = _resid(x_new)
+            res_new = float(np.max(np.abs(r_new)))
+            if res_new < residual:
+                x, r, residual = x_new, r_new, res_new
+                lam = max(lam * 0.5, 1e-9)
+                improved = True
+                break
+            lam *= 10.0
+        if not improved:                           # ลดต่อไม่ได้แล้ว
+            break
+        if residual < best_res:
+            best_x, best_res = x.copy(), residual
+    else:
+        if residual < best_res:
+            best_x, best_res = x.copy(), residual
+    x, residual = best_x, best_res
 
     # บังคับท่า "หงาย" (z > 0): ถ้าได้ท่ากระจก (z<0) ให้สะท้อนกลับ
     # เพราะ pose (z,r,p,y) กับ (-z,-r,-p,y) ให้ความยาวขาเท่ากัน (สมมาตรจานล่าง z=0)
@@ -282,9 +314,11 @@ class StewartHead:
         # ตำแหน่ง home จริงต่อขา (จากการ calibrate) — ถ้ามี ใช้แทน pos_center รวม
         self.home_positions = cfg.get("leg_home_pos")
 
-    def set_pose(self, z, roll=0.0, pitch=0.0, yaw=0.0, speed=1000):
+    def set_pose(self, z, roll=0.0, pitch=0.0, yaw=0.0, speed=1000, acc=0):
         """ตั้งท่าหัว: z=mm, roll/pitch/yaw=เรเดียน
 
+        speed: ความเร็ว servo (0 = เร็วสุด) · acc: อัตราเร่ง 0-254 (0 = ทันที,
+        ค่ามาก = ค่อย ๆ เร่ง/ผ่อน — ช่วยให้การเคลื่อนไหวสมูธ ไม่กระตุก)
         คืนค่าความยาวขาที่คำนวณได้ (สำหรับการ calibrate)
         """
         lengths = leg_lengths(
@@ -316,7 +350,7 @@ class StewartHead:
                 solution=solution,
             )
             targets.append((sid, pos))
-        self.bus.sync_set_position(targets, speed=speed)
+        self.bus.sync_set_position(targets, speed=speed, acc=acc)
         return lengths
 
     def home(self, speed=1000):

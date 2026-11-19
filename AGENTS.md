@@ -31,7 +31,9 @@ Reachy Mini/
 │   ├── mujoco_sim.py        # จำลองหุ่น DIY ใน MuJoCo (GUI 3D, รองรับ STL mesh)
 │   ├── sim_gui.py           # GUI 3D แบบ matplotlib (สำรอง)
 │   ├── camera.py            # อ่าน USB camera
-│   └── vision.py            # ติดตามมือ (MediaPipe / fallback skin)
+│   ├── vision.py            # ติดตามมือ (MediaPipe / fallback skin)
+│   ├── beat.py              # จับจังหวะเพลงจากเสียงลำโพง (loopback → BPM + phase)
+│   └── dance_sync.py        # เต้นตามจังหวะ หลายหุ่น/หลายโหมด (together/alternate/canon/mirror/free/show)
 ├── scripts/
 │   ├── self_test.py         # ตรวจสอบโค้ดทั้งหมด (รันก่อนส่งงานเสมอ!)
 │   ├── calibrate.py         # calibrate อัตโนมัติ (geometric/zero/verify)
@@ -40,6 +42,7 @@ Reachy Mini/
 │   ├── test_servos.py       # ทดสอบมอเตอร์ (sweep + read)
 │   ├── demo_wave.py         # สาธิตทักทาย
 │   ├── demo_hand_tracking.py# ติดตามมือด้วยกล้อง USB
+│   ├── two_robots_music_dance.py # 2 หุ่นเต้นตามเพลง YouTube (ฟังจังหวะจากลำโพง)
 │   ├── run_simulation.py    # เปิด MuJoCo sim
 │   └── generate_sample_stls.py  # สร้าง STL ตัวอย่าง
 ├── models/stl/              # ไฟล์ STL ชิ้นส่วน (ใช้ใน MuJoCo sim)

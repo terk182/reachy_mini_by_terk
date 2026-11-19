@@ -11,6 +11,8 @@
   python scripts/calibrate.py --hardware               # geometric + zero
   python scripts/calibrate.py --verify --hardware      # ตรวจสอบความแม่นยำ
   python scripts/calibrate.py --hardware --port COM5
+  python scripts/calibrate.py --hardware --robot b      # calibrate น้องนุ (calibration_b.json)
+  python scripts/calibrate.py --hardware --robot b --no-release   # อ่านท่าที่จัดไว้ทันที
 """
 
 import sys
@@ -42,8 +44,11 @@ def _geometric(config) -> dict:
     return {"leg_home": round(leg_home, 4)}
 
 
-def _zero(config, port) -> dict:
-    """อ่านตำแหน่ง home จริงของมอเตอร์ 6 ตัว (ปล่อย torque ให้จัดหัวได้เอง แล้วเปิดกลับ)"""
+def _zero(config, port, release: bool = True) -> dict:
+    """อ่านตำแหน่ง home จริงของมอเตอร์ 6 ตัว (ปล่อย torque ให้จัดหัวได้เอง แล้วเปิดกลับ)
+
+    release=False → อ่านทันทีโดยไม่ปล่อย torque (ใช้เมื่องัดท่าไว้แล้วและไม่อยากให้หัวทรุด)
+    """
     from src.servo_bus import ServoBus
 
     st = config["stewart"]
@@ -55,13 +60,17 @@ def _zero(config, port) -> dict:
         if missing:
             raise SystemExit(f"มอเตอร์หัวไม่ตอบสนอง: {missing} — เช็คสายไฟ/ID")
 
-        # ปล่อย torque (limp) ให้จัดหัวได้เอง — encoder ยังอ่านตำแหน่งได้
-        for sid in ids:
-            bus.set_torque(sid, False)
-        print("\n[zero] ปล่อย torque แล้ว — จัดหัวให้อยู่ในท่า home: "
-              "ระดับ (ไม่เอียง), สูง "
-              f"z_home ≈ {st['z_home']} mm จากจานล่าง")
-        input("[zero] พร้อมแล้วกด Enter เพื่ออ่านตำแหน่ง... ")
+        if release:
+            # ปล่อย torque (limp) ให้จัดหัวได้เอง — encoder ยังอ่านตำแหน่งได้
+            for sid in ids:
+                bus.set_torque(sid, False)
+            print("\n[zero] ปล่อย torque แล้ว — จัดหัวให้อยู่ในท่า home: "
+                  "ระดับ (ไม่เอียง), สูง "
+                  f"z_home ≈ {st['z_home']} mm จากจานล่าง")
+            input("[zero] พร้อมแล้วกด Enter เพื่ออ่านตำแหน่ง... ")
+        else:
+            print("\n[zero] อ่านตำแหน่งทันที (ไม่ปล่อย torque) — "
+                  "ใช้ท่าที่จัดไว้แล้วเป็นท่า home")
 
         home_pos = []
         for sid in ids:
@@ -142,7 +151,7 @@ def _verify(config, port, n_poses=5) -> None:
         worst = 0.0
         for (z, roll, pitch, yaw) in poses:
             head.set_pose(z, roll, pitch, yaw, speed=500)
-            time.sleep(0.5)
+            time.sleep(1.2)   # รอหัวขยับเสร็จก่อนอ่านกลับ (0.5 วิ สั้นเกิน — อ่านได้ค่ากลางทาง)
             # อ่านกลับ
             lengths = []
             centers = st.get("leg_home_pos")
@@ -192,9 +201,14 @@ def main():
                         help="ตรวจสอบความแม่นยำ (สั่ง->อ่าน->FK)")
     parser.add_argument("--no-save", action="store_true",
                         help="คำนวณอย่างเดียว ไม่บันทึก calibration.json")
+    parser.add_argument("--no-release", action="store_true",
+                        help="อ่านตำแหน่งทันที ไม่ปล่อย torque (ใช้ท่าที่จัดไว้แล้ว)")
+    parser.add_argument("--robot", choices=["a", "b"], default="a",
+                        help="หุ่นที่จะ calibrate: a = พี่ทด (calibration.json) · "
+                             "b = น้องนุ (calibration_b.json)")
     args = parser.parse_args()
 
-    config = get_config()
+    config = get_config(args.robot)
     updates = {}
 
     updates.update(_geometric(config))
@@ -203,15 +217,15 @@ def main():
         if args.antennas:
             ant = _zero_antennas(config, args.port)
             if not args.no_save:
-                path = save_calibration(ant, section="antennas")
-                print(f"\nบันทึก antenna calibration -> {path}")
+                path = save_calibration(ant, section="antennas", robot=args.robot)
+                print(f"\nบันทึก antenna calibration ({args.robot}) -> {path}")
                 print("   ค่าที่บันทึก:", ant)
         else:
-            updates.update(_zero(config, args.port))
+            updates.update(_zero(config, args.port, release=not args.no_release))
 
     if not args.no_save and updates:
-        path = save_calibration(updates)
-        print(f"\nบันทึก calibration -> {path}")
+        path = save_calibration(updates, robot=args.robot)
+        print(f"\nบันทึก calibration ({args.robot}) -> {path}")
         print("   ค่าที่บันทึก:", updates)
 
     if args.verify:

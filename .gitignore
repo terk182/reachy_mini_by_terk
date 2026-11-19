@@ -28,6 +28,7 @@ third_party/
 
 # ค่า calibration เฉพาะเครื่อง (แต่ละตัว calibrate เอง)
 config/calibration.json
+config/calibration_b.json
 
 # plan ชั่วคราว
 plan.md

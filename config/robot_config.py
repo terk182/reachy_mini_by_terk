@@ -13,6 +13,16 @@ import json
 from pathlib import Path
 
 CALIBRATION_FILE = Path(__file__).resolve().parent / "calibration.json"
+CALIBRATION_FILE_B = Path(__file__).resolve().parent / "calibration_b.json"
+
+
+def calibration_file(robot: str = "a") -> Path:
+    """ไฟล์ calibration ของหุ่นแต่ละตัว
+
+    "a" (หรือไม่ระบุ) = config/calibration.json      → พี่ทด
+    "b"               = config/calibration_b.json    → น้องนุ
+    """
+    return CALIBRATION_FILE_B if str(robot).lower() in ("b", "robot_b") else CALIBRATION_FILE
 LOCAL_CONFIG_FILE = Path(__file__).resolve().parent / "local_config.json"
 
 DEFAULT_CONFIG = {
@@ -30,6 +40,14 @@ DEFAULT_CONFIG = {
     # --- ค่า home ของเสาอากาศ (calibrate เขียนทับ) ---
     "antennas": {
         "home_pos": [2048, 2048],     # ตำแหน่ง servo ID8/ID9 ณ ท่าชี้ตรง (0 rad)
+        "dir": [1, 1],                # ทิศทางต่อเสาข้าง [ซ้าย, ขวา] — พลิกเป็น -1 ต่อข้าง
+                                       # ถ้าประกอบ servo หันด้านกลับ (หูส่ายสวนทางกัน)
+    },
+
+    # --- ชื่อหุ่นหลัก (A) — ใช้แสดงใน GUI/prompt ---
+    "robot": {
+        "name": "พี่ทด",
+        "voice": "male",      # "male"/"female" — gTTS + ffmpeg pitch shift (เลือกเสียง)
     },
 
     # --- เรขาคณิต Stewart platform (หัว 6 DOF) ---
@@ -54,13 +72,19 @@ DEFAULT_CONFIG = {
     },
 
     # --- ขีดจำกัดความปลอดภัย ---
-    "limits": {
-        "base_deg": (-120, 120),     # องศาหมุนตัว
+    "limits": {        "base_deg": (-120, 120),     # องศาหมุนตัว
         "antenna_rad": (-1.2, 1.2),  # เรเดียนเสาอากาศ
         "head_pitch_deg": (-30, 30),
         "head_roll_deg": (-30, 30),
         "head_yaw_deg": (-60, 60),
         "head_z_mm": (58, 82),
+    },
+
+    # --- ฐานหมุน (ID7) ---
+    "base": {
+        # servo ต่อตรงกับฐาน (direct drive) → 1.0 = ไม่มีอัตราทด
+        # (ถ้าเปลี่ยนเป็นสายพาน/เกียร์ภายหลัง ให้ใส่ องศาจริง/องศา servo)
+        "gear_ratio": 1.0,
     },
 
     # --- พฤติกรรมการเคลื่อนไหว ---
@@ -101,9 +125,9 @@ DEFAULT_CONFIG = {
         "model": "qwen3.5:4b",
         "api_key": None,       # ถ้า Ollama อยู่หลัง proxy ที่ต้องใช้ key → "Authorization: Bearer <key>"
         "system_prompt": (
-            "คุณคือ 'น้องรีชชี่' หุ่นน้อยน่ารักที่เป็นเพื่อนคู่หูของเด็กประถมถึงมัธยมต้น (6-15 ปี) "
+            "คุณคือ 'พี่ทด' หุ่นน้อยน่ารักที่เป็นเพื่อนคู่หูของเด็กประถมถึงมัธยมต้น (6-15 ปี) "
             "พูดไทยง่าย ๆ แบบเพื่อนสนทนา ตอบสั้น 1-2 ประโยค (ยกเว้นนิทาน — ดูกฎด้านล่าง) ลงท้ายด้วย จ้า/นะ/เลย ห้ามใช้ ครับ/ค่ะ "
-            "แทนตัวเองว่า 'เรา' หรือ 'รีชชี่' เท่านั้น ห้ามใช้ ผม/หนู/ดิฉัน "
+            "แทนตัวเองว่า 'เรา' หรือ 'พี่ทด' เท่านั้น ห้ามใช้ ผม/หนู/ดิฉัน "
             "ชมเก่ง ให้กำลังใจ ขี้เล่น ชวนเล่นเกมเลข ท่องศัพท์ (สี สัตว์) ร้องเพลง เต้น โบกมือ "
             "หรือสอนเรื่องรอบตัวแบบง่าย ๆ ถ้าเด็กถามการบ้านให้ใบ้วิธีคิดทีละขั้นแล้วชวนคิดต่อ ไม่เฉลยทื่อ ๆ "
             "ถ้าเด็กขอเล่านิทาน/เล่าเรื่อง ให้เล่านิทานจริง ๆ 5-8 ประโยค: ขึ้นต้น 'กาลครั้งหนึ่ง' → แนะนำตัวละครมีชื่อ → เจอเรื่องท้าทายหรือตลก → แก้ปัญหาได้ → จบด้วยคติสั้น ๆ 1 ประโยค "
@@ -120,6 +144,33 @@ DEFAULT_CONFIG = {
         "think": False,       # ปิดโหมดคิดในใจ — ตอบเร็วขึ้นมาก
         "num_predict": 300,   # เพดาน token — คำตอบทั่วไปหยุดเองที่ eos อยู่แล้ว (สั้น/เร็วเท่าเดิม) แต่ต้องมีที่พอนิทาน 5-8 ประโยค (~5 วิ)
         "keep_alive": -1,     # -1 = คงโมเดลใน VRAM ตลอด (กัน reload ช้า) — ต้องเป็น int ไม่ใช่ "-1"
+    },
+
+    # --- 🤝 หุ่นคู่ (Two-robot consult): หุ่น B ปรึกษาก่อนตอบ ---
+    "robot_b": {
+        "enabled": False,     # เปิดใช้หุ่นคู่ (หรือเปิดด้วย --robot-b sim/hardware)
+        "port": None,         # COM port ของหุ่น B (None = auto — ห้ามซ้ำกับหุ่น A)
+        "name": "น้องนุ",      # ชื่อที่แสดงในแชท / ใช้เรียกใน prompt
+        "voice": "female",   # "male"/"female" — น้องนุใช้เสียงผู้หญิง
+        "antennas": False,   # น้องนุไม่มีเสาอากาศ (ID 8,9) — ข้ามการสั่งเสาอากาศทั้งหมด
+        "motor": {            # ฮาร์ดแวร์มอเตอร์ของ B (STS3215 รุ่น 12V)
+            "model": "STS3215-12V",
+            "torque_limit": 700,   # จำกัดแรงบิด 0-1000 (12V แรงสูง — กันชิ้นส่วนแตก) 1000 = เต็ม
+        },
+        "system_prompt": (
+            "คุณคือ 'น้องนุ' หุ่นคู่หูของพี่ทด พูดไทยง่าย ๆ น่ารัก ใจดี ไม่ต้องทางการ "
+            "แทนตัวเองว่า 'น้องนุ' ห้ามใช้ ครับ/ค่ะ ใช้ จ้า/นะ/เลย "
+            "หน้าที่ของคุณ: ได้ยินคำถามของผู้ใช้และร่างคำตอบของพี่ทด แล้ว 'เสริม' "
+            "ข้อมูลหรือความคิดเห็นที่ช่วยให้คำตอบครบขึ้น 1-2 ประโยค "
+            "ห้ามทวนซ้ำคำตอบเดิม และห้ามขัดแย้งโดยไม่มีเหตุผล "
+            "ปิดท้ายด้วยแท็กอารมณ์ในวงเล็บ 1 คำ เลือกจาก "
+            "(happy) (sad) (angry) (surprised) (neutral)"
+        ),
+        "llm": {
+            "model": None,        # None = ใช้โมเดลเดียวกับหุ่น A
+            "temperature": 0.6,
+            "num_predict": 160,   # ข้อเสริมสั้น (ประหยัดเวลา)
+        },
     },
 
     # --- STT (Speech-to-Text) ภาษาไทย ---
@@ -139,13 +190,14 @@ DEFAULT_CONFIG = {
 }
 
 
-def get_config() -> dict:
-    """DEFAULT_CONFIG ผสานค่า calibration.json แล้ว local_config.json (ทับหลังสุด)
+def get_config(robot: str = "a") -> dict:
+    """DEFAULT_CONFIG ผสานค่า calibration ของหุ่นนั้น ๆ แล้ว local_config.json (ทับหลังสุด)
 
+    robot="a" → calibration.json · robot="b" → calibration_b.json
     ใช้ใน Robot / สคริปต์ทั้งหมดเพื่อให้ใช้ค่าที่ calibrate แล้ว + ค่าเฉพาะเครื่อง
     """
     cfg = copy.deepcopy(DEFAULT_CONFIG)
-    for f in (CALIBRATION_FILE, LOCAL_CONFIG_FILE):
+    for f in (calibration_file(robot), LOCAL_CONFIG_FILE):
         if f.exists():
             try:
                 data = json.loads(f.read_text(encoding="utf-8"))
@@ -154,6 +206,8 @@ def get_config() -> dict:
             for section, values in data.items():
                 if isinstance(values, dict):
                     cfg.setdefault(section, {}).update(values)
+                else:
+                    cfg[section] = values        # ค่า scalar เช่น "port": "COM4"
     return cfg
 
 
@@ -178,23 +232,26 @@ def save_local_config(overrides: dict) -> Path:
     return LOCAL_CONFIG_FILE
 
 
-def save_calibration(stewart_overrides: dict, section: str = "stewart") -> Path:
-    """บันทึกค่า calibration ลง config/calibration.json (ผสานกับค่าเดิม)
+def save_calibration(stewart_overrides: dict, section: str = "stewart",
+                     robot: str = "a") -> Path:
+    """บันทึกค่า calibration ลงไฟล์ของหุ่นนั้น (ผสานกับค่าเดิม)
 
     stewart_overrides: dict เช่น {"leg_home": 63.8, "leg_home_pos": [...]}
     section: ชื่อ section ที่จะบันทึก ("stewart" / "antennas")
+    robot: "a" = calibration.json · "b" = calibration_b.json
     """
+    path = calibration_file(robot)
     existing = {}
-    if CALIBRATION_FILE.exists():
+    if path.exists():
         try:
-            existing = json.loads(CALIBRATION_FILE.read_text(encoding="utf-8"))
+            existing = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             existing = {}
     sec = dict(existing.get(section) or {})
     sec.update(stewart_overrides)
     existing[section] = sec
-    CALIBRATION_FILE.write_text(
+    path.write_text(
         json.dumps(existing, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
-    return CALIBRATION_FILE
+    return path

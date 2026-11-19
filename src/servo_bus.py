@@ -291,6 +291,19 @@ class ServoBus:
         data = self.read(servo_id, REG_PRESENT_VOLTAGE, 1)
         return data[0] / 10.0 if data else None
 
+    def set_torque_limit(self, servo_id, limit):
+        """จากัดแรงบิดสูงสุด 0-1000 (1000 = เต็ม)
+
+        ⚠️ STS3215 รุ่น 12V แรงบิดสูงกว่า 7.4V มาก — ลดค่านี้กันชิ้นส่วน 3D print แตก
+        """
+        limit = max(0, min(1000, int(limit)))
+        self.write(servo_id, REG_TORQUE_LIMIT, [limit & 0xFF, (limit >> 8) & 0xFF])
+        return limit
+
+    def get_torque_limit(self, servo_id):
+        data = self.read(servo_id, REG_TORQUE_LIMIT, 2)
+        return (data[0] | (data[1] << 8)) if data else None
+
     def set_id(self, servo_id, new_id):
         """เปลี่ยน ID (EEPROM) — ⚠️ ตัวเดียวบน bus + ถอดปลั๊ก-เสียบใหม่หลังตั้ง
 

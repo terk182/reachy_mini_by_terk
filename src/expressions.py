@@ -145,9 +145,10 @@ def talk_animation(robot, stop_event: threading.Event,
             pass
 
 
-def speak_with_motion(robot, text: str) -> bool:
+def speak_with_motion(robot, text: str, voice: str | None = None) -> bool:
     """พูด (TTS) พร้อมขยับหัวตามจังหวะเสียงจริง (audio-reactive)
 
+    voice: "male"/"female" = โปรไฟล์เสียงไทย (gTTS + pitch shift) — None = เสียงเดิม
     ลำดับ:
       1. สังเคราะห์ TTS → MP3
       2. decode → PCM → วิเคราะห์ sway offsets (SwayRollRT จาก official)
@@ -161,9 +162,9 @@ def speak_with_motion(robot, text: str) -> bool:
     if not clean:
         return True
 
-    mp3 = synthesize_to_file_cached(clean)
+    mp3 = synthesize_to_file_cached(clean, voice=voice)
     if not mp3:
-        return speak(clean)  # สังเคราะห์ไม่ได้ -> พูดแบบเดิม (ไม่มี motion)
+        return speak(clean, voice=voice)  # สังเคราะห์ไม่ได้ -> พูดแบบเดิม (ไม่มี motion)
 
     offsets = None
     try:

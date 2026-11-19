@@ -285,7 +285,7 @@ def _transcribe_with(audio: np.ndarray, model: str, device: str, language: str) 
     try:
         segments, _info = m.transcribe(
             audio, language=language, beam_size=5, vad_filter=True,
-            hotwords="รีชชี่ น้องรีชชี่", condition_on_previous_text=False)
+            hotwords="พี่ทด น้องนุ", condition_on_previous_text=False)
     except TypeError:  # faster-whisper เก่าไม่รู้จัก hotwords
         segments, _info = m.transcribe(audio, language=language, beam_size=5,
                                        vad_filter=True)

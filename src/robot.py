@@ -33,8 +33,12 @@ class Robot:
     # หุ่น DIY: หน้า=+Y -> ก้ม/เงย(nod)=roll, เอียง=pitch
     nod_axis = "roll"
 
-    def __init__(self, backend="sim", port=None, config=None, gui=False):
-        """gui: False = ไม่มี, True/'mujoco' = MuJoCo 3D, 'matplotlib' = matplotlib 3D"""
+    def __init__(self, backend="sim", port=None, config=None, gui=False,
+                 viewer=None):
+        """gui: False = ไม่มี, True/'mujoco' = MuJoCo 3D, 'matplotlib' = matplotlib 3D
+
+        viewer: viewer ที่สร้างจากภายนอก (เช่น MuJoCo 2 หุ่นในหน้าต่างเดียว)
+        """
         from config.robot_config import get_config
 
         self.config = dict(config or get_config())
@@ -43,6 +47,9 @@ class Robot:
         self._sim = None
         self._viewer = None
         self.head = None
+        # True = กำลังเต้นตามเพลง (DanceController คุมมอเตอร์อยู่) — ท่าอื่น
+        # (พูด/อารมณ์/ติดตามหน้า) จะไม่ส่งคำสั่งจริง กันแย่งมอเตอร์กัน
+        self.dancing = False
         # ตำแหน่งหัวล่าสุด (สำหรับ interpolation แบบ eased)
         self._pose = {
             "z": float(self.config["stewart"]["z_home"]),
@@ -60,14 +67,45 @@ class Robot:
                 self.config["servo_ids"]["head"],
                 self.config["stewart"],
             )
+            self._apply_motor_limits()
         elif backend == "sim":
             from .sim_robot import SimRobot
 
-            viewer = self._make_viewer(gui)
-            self._sim = SimRobot(self.config, viewer=viewer)
-            self._viewer = viewer
+            v = viewer if viewer is not None else self._make_viewer(gui)
+            self._sim = SimRobot(self.config, viewer=v)
+            self._viewer = v
         else:
             raise ValueError(f"backend ไม่รู้จัก: {backend} (ใช้ sim / hardware)")
+
+    def _apply_motor_limits(self):
+        """จำกัดแรงบิดมอเตอร์ตาม config["motor"]["torque_limit"] (0-1000, None = ไม่แตะ)
+
+        ⚠️ STS3215 รุ่น 12V แรงบิดสูงกว่า 7.4V มาก — ลดค่าไว้กันชิ้นส่วน 3D print แตก
+        """
+        motor = self.config.get("motor") or {}
+        limit = motor.get("torque_limit")
+        if limit is None or self._bus is None:
+            return
+        ids = list(self.config["servo_ids"]["head"])
+        if (self.config.get("antennas") or {}).get("enabled", True) is not False:
+            ids += list(self.config["servo_ids"]["antennas"])
+        ids.append(self.config["servo_ids"]["base"])
+        ids = list(dict.fromkeys(ids))     # ตัด ID ซ้ำ
+        limit = int(limit)
+        ok = 0
+        for sid in ids:
+            got = None
+            for _ in range(3):             # USB-TTL พลาดเป็นช่วง → เขียนซ้ำ + อ่านยืนยัน
+                self._bus.set_torque_limit(sid, limit)
+                time.sleep(0.03)
+                got = self._bus.get_torque_limit(sid)
+                if got == limit:
+                    ok += 1
+                    break
+            else:
+                print(f"[motor] ⚠️ ID{sid} ตั้ง torque limit ไม่ติด (อ่านได้ {got})")
+        model = f" ({motor.get('model')})" if motor.get("model") else ""
+        print(f"[motor] จำกัดแรงบิด {limit}/1000 → {ok}/{len(ids)} ตัว{model}")
 
     def _make_viewer(self, gui):
         """สร้าง viewer ตามที่เลือก: True/'mujoco' -> MuJoCo, 'matplotlib' -> matplotlib"""
@@ -106,8 +144,49 @@ class Robot:
         return self._bus.reconnect()
 
     # ---------- การเคลื่อนไหว ----------
+    def _gated(self, duration) -> bool:
+        """ถ้ากำลังเต้นอยู่ → ไม่ส่งคำสั่ง แค่รอเวลาเท่าเดิม (loop ที่เรียกจะได้ไม่วนรัว)"""
+        if not self.dancing:
+            return False
+        time.sleep(min(max(float(duration or 0.0), 0.0), 1.0))
+        return True
+
+    def stream_pose(self, z=None, roll=0.0, pitch=0.0, yaw=0.0, base_deg=None,
+                    speed=None, acc=20):
+        """ส่งท่าหัว (+ ฐาน) ทันทีแบบไม่รอ — สำหรับ loop ความถี่สูง (เต้นตามเพลง)
+
+        z=mm, มุม=องศา, base_deg=องศาจริง (None = ไม่ขยับฐาน) · clamp ตาม limits
+        ทำงานแม้ dancing=True (ตัวเต้นเป็นคนเรียก)
+        """
+        lim = self.config["limits"]
+        if z is None:
+            z = self.config["stewart"]["z_home"]
+        z = _clamp(float(z), *lim["head_z_mm"])
+        roll = _clamp(float(roll), *lim["head_roll_deg"])
+        pitch = _clamp(float(pitch), *lim["head_pitch_deg"])
+        yaw = _clamp(float(yaw), *lim["head_yaw_deg"])
+        self._pose = {"z": z, "roll": roll, "pitch": pitch, "yaw": yaw}
+        if base_deg is not None:
+            base_deg = _clamp(float(base_deg), *lim["base_deg"])
+        if self.is_sim:
+            st = self._sim.state
+            st["head"] = dict(self._pose)
+            if base_deg is not None:
+                st["base"] = base_deg
+            self._sim._notify()         # ไม่ log ทุกเฟรม (20 Hz จะท่วม console)
+            return self
+        speed = self.config["motion"]["default_speed"] if speed is None else speed
+        self.head.set_pose(z, _rad(roll), _rad(pitch), _rad(yaw), speed=speed, acc=acc)
+        if base_deg is not None:
+            ratio = float((self.config.get("base") or {}).get("gear_ratio", 1.0) or 1.0)
+            pos = self._bus.deg_to_pos(base_deg / ratio + 180.0)
+            self._bus.set_position(self.config["servo_ids"]["base"], pos, speed=speed)
+        return self
+
     def set_head_pose(self, z=None, roll=0.0, pitch=0.0, yaw=0.0, duration=1.0):
         """ตั้งท่าหัว: z=mm, มุมเป็นองศา"""
+        if self._gated(duration):
+            return self
         lim = self.config["limits"]
         st = self.config["stewart"]
         if z is None:
@@ -154,13 +233,17 @@ class Robot:
         return self
 
     def set_base(self, angle_deg, duration=1.0):
-        """หมุนตัว (องศา, 0 = กลาง)"""
+        """หมุนตัว (องศา**จริง**, 0 = กลาง) — แปลงผ่าน base.gear_ratio อัตโนมัติ"""
+        if self._gated(duration):
+            return self
         lo, hi = self.config["limits"]["base_deg"]
         angle_deg = _clamp(float(angle_deg), lo, hi)
+        ratio = float((self.config.get("base") or {}).get("gear_ratio", 1.0) or 1.0)
+        servo_deg = angle_deg / ratio          # มอเตอร์ต้องหมุนมากกว่ามุมจริงถ้า ratio < 1
         if self.is_sim:
             self._sim.set_base(angle_deg, duration)
         else:
-            pos = self._bus.deg_to_pos(angle_deg + 180.0)  # 0° = ตำแหน่งกลาง
+            pos = self._bus.deg_to_pos(servo_deg + 180.0)  # 0° = ตำแหน่งกลาง
             self._bus.set_position(
                 self.config["servo_ids"]["base"], pos,
                 speed=self.config["motion"]["default_speed"],
@@ -169,7 +252,11 @@ class Robot:
         return self
 
     def set_antennas(self, left=0.0, right=0.0, duration=0.5):
-        """ขยับเสาอากาศ (เรเดียน)"""
+        """ขยับเสาอากาศ (เรเดียน) — ถ้าหุ่นไม่มีเสาอากาศ (antennas.enabled=false) จะข้าม"""
+        if (self.config.get("antennas") or {}).get("enabled", True) is False:
+            return self
+        if self._gated(duration):
+            return self
         lo, hi = self.config["limits"]["antenna_rad"]
         left = _clamp(float(left), lo, hi)
         right = _clamp(float(right), lo, hi)
@@ -177,10 +264,12 @@ class Robot:
             self._sim.set_antennas(left, right, duration)
         else:
             ids = self.config["servo_ids"]["antennas"]
-            homes = (self.config.get("antennas") or {}).get("home_pos") or [2048, 2048]
-            for sid, rad, home in zip(ids, (left, right), homes):
+            ant_cfg = self.config.get("antennas") or {}
+            homes = ant_cfg.get("home_pos") or [2048, 2048]
+            dirs = ant_cfg.get("dir") or [1, 1]   # ทิศต่อข้าง (แก้ "หูสลับทาง" ตามการประกอบจริง)
+            for sid, rad, home, d in zip(ids, (left, right), homes, dirs):
                 # 0 rad = ท่าชี้ตรง (home ที่ calibrate แล้ว)
-                pos = int(round(home + _deg(rad) * 4096.0 / 360.0)) % 4096
+                pos = int(round(home + _deg(rad * d) * 4096.0 / 360.0)) % 4096
                 self._bus.set_position(
                     sid, pos, speed=self.config["motion"]["default_speed"])
             time.sleep(duration)  # รอให้เสาอากาศขยับเสร็จ (hardware)
